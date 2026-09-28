@@ -31,11 +31,35 @@ jobs:
       - run: npm test
       - run: npm run pack:dry
 
+  mcp:
+    name: MCP server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mcp/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm ci
+        working-directory: mcp
+      - run: npm run typecheck
+        working-directory: mcp
+      - run: npm test
+        working-directory: mcp
+
   required:
     name: Required checks
     if: always()
     needs:
       - test
+      - mcp
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any required job did not pass
