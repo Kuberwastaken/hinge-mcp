@@ -1,5 +1,11 @@
 import { build } from "esbuild";
-import { readdir, readFile, writeFile, mkdir, copyFile } from "node:fs/promises";
+import {
+  readdir,
+  readFile,
+  writeFile,
+  mkdir,
+  copyFile,
+} from "node:fs/promises";
 
 // Include the local SDK in published artifacts: no file: dependency escapes.
 await build({
@@ -11,18 +17,28 @@ await build({
   format: "esm",
   sourcemap: true,
   packages: "external",
-  alias: { "hinge-ts": "../sdk/dist/index.js" }
+  alias: { "hinge-ts": "../sdk/dist/index.js" },
 });
 
 await mkdir("dist/sdk", { recursive: true });
 for (const name of await readdir("../sdk/dist")) {
-  if (name.endsWith(".d.ts")) await copyFile(`../sdk/dist/${name}`, `dist/sdk/${name}`);
+  if (name.endsWith(".d.ts"))
+    await copyFile(`../sdk/dist/${name}`, `dist/sdk/${name}`);
 }
 for (const name of await readdir("dist")) {
   if (name.endsWith(".d.ts")) {
     const path = `dist/${name}`;
-    await writeFile(path, (await readFile(path, "utf8")).replaceAll('"hinge-ts"', '"./sdk/index.js"'));
+    await writeFile(
+      path,
+      (await readFile(path, "utf8")).replaceAll(
+        '"hinge-ts"',
+        '"./sdk/index.js"',
+      ),
+    );
   }
 }
 await copyFile("../LICENSE-MIT", "LICENSE-MIT");
 await copyFile("../README.md", "README.md");
+await copyFile("../AGENTS.md", "AGENTS.md");
+await mkdir("assets", { recursive: true });
+await copyFile("../assets/hero.png", "assets/hero.png");

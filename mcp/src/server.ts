@@ -5,6 +5,7 @@ import { registerAuthTools } from "./tools/auth.js";
 import { registerReadTools } from "./tools/read.js";
 import { registerWriteTools } from "./tools/write.js";
 import { registerChatGptTools } from "./tools/chatgpt.js";
+import { SETUP_SUMMARY } from "./setup.js";
 
 export const SERVER_NAME = "hinge-mcp";
 export const SERVER_VERSION = "0.2.0";
@@ -25,7 +26,7 @@ export function createHingeMcpServer(context: HingeMcpContext): McpServer {
       instructions: [
         USAGE,
         "Tools for operating the user's own Hinge account through the hinge-ts SDK.",
-        "Most tools need a logged-in session. If a tool reports a missing or expired session, run hinge_login_start, then hinge_login_verify_otp with the SMS code (and hinge_login_verify_email if Hinge asks for email verification).",
+        SETUP_SUMMARY,
         "Recommendation and like entries carry a subjectId and ratingToken; pass both to hinge_like or hinge_skip.",
         "Actions that like, skip, message, or change settings are irreversible on the real account. Confirm intent with the user before calling them.",
       ].join("\n"),

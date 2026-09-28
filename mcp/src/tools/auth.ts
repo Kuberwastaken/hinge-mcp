@@ -19,7 +19,7 @@ export function registerAuthTools(
       outputSchema: OUTPUT_SCHEMAS.hinge_session_status,
       title: "Hinge session status",
       description:
-        "Reports local token presence and expiry; does not verify with Hinge, which phone number it belongs to, and where it is stored. Call this first when unsure whether login is needed.",
+        "Reports local token presence, expiry, configured phone number and session path, without contacting Hinge. Call first; verify loggedIn with hinge_me. For setup help read hinge://setup or use setup_account. Never request session file contents.",
       inputSchema: z.object({}).strict(),
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
@@ -36,8 +36,8 @@ export function registerAuthTools(
         sessionFile: context.config.sessionFile,
         readOnly: context.config.readOnly,
         nextStep: valid
-          ? "ready"
-          : "call hinge_login_start, then hinge_login_verify_otp",
+          ? "call hinge_me to verify live access; this status only checks local expiry"
+          : "read hinge://setup or use setup_account; reuse an existing session or establish the user's intent to send SMS before hinge_login_start",
         validation: "local_expiry_only",
       });
     }),
@@ -49,7 +49,7 @@ export function registerAuthTools(
       outputSchema: OUTPUT_SCHEMAS.hinge_login_start,
       title: "Start Hinge login",
       description:
-        "Sends a Hinge SMS one-time code to the phone number. Uses HINGE_PHONE_NUMBER unless phoneNumber is given (E.164, e.g. +15555550123). Follow up with hinge_login_verify_otp.",
+        "Sends a Hinge SMS one-time code and clears previous local login state. Check hinge_session_status first and establish the user's login intent. Uses HINGE_PHONE_NUMBER unless phoneNumber is given (E.164, e.g. +15555550123). Call once; wait for the code before hinge_login_verify_otp.",
       inputSchema: z
         .object({
           phoneNumber: z
@@ -88,7 +88,7 @@ export function registerAuthTools(
         status: "otp_sent",
         phoneNumber: client.phoneNumber,
         nextStep:
-          "ask the user for the SMS code, then call hinge_login_verify_otp",
+          "obtain the current SMS code from the user, or an available SMS tool specifically authorized for this login; submit it with hinge_login_verify_otp without echoing it; do not restart login while waiting",
       });
     }),
   );
@@ -99,7 +99,7 @@ export function registerAuthTools(
       outputSchema: OUTPUT_SCHEMAS.hinge_login_verify_otp,
       title: "Verify Hinge SMS code",
       description:
-        "Submits the SMS one-time code from hinge_login_start. On success the session is saved. If Hinge requires email verification, the result contains a caseId and the email address; ask the user for the emailed code and call hinge_login_verify_email.",
+        "Submits the current SMS code from hinge_login_start; do not echo it. Session is saved on success; verify with hinge_me. If email_verification_required is returned, use its caseId and obtain the matching emailed code from the user or a specifically authorized email connector for hinge_login_verify_email.",
       inputSchema: z
         .object({
           otp: z
@@ -126,7 +126,7 @@ export function registerAuthTools(
             caseId: error.caseId,
             email: error.email,
             nextStep:
-              "ask the user for the code emailed to them, then call hinge_login_verify_email with caseId and code",
+              "obtain the current emailed code from the user, or an available email tool specifically authorized for this login; call hinge_login_verify_email with this caseId and code without echoing the code",
           });
         }
         throw error;

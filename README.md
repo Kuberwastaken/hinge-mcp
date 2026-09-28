@@ -1,8 +1,10 @@
+![hinge-mcp — Model Context Protocol. Paper conversation shapes joined by a charcoal hinge.](assets/hero.png)
+
 # hinge-mcp
 
-A TypeScript [Model Context Protocol](https://modelcontextprotocol.io/) server for your own Hinge account, built on [wrsrsh/hinge-ts](https://github.com/wrsrsh/hinge-ts).
+A TypeScript [Model Context Protocol](https://modelcontextprotocol.io/) server for your own Hinge account.
 
-It exposes **23 tools, two resources, one resource template, two prompts, and prompt-argument completion**. It runs locally over **stdio**, or over **Streamable HTTP** with an optional static bearer token or OAuth resource-server authentication. The optional raw tool brings the total to 24.
+It exposes **23 tools, three resources, one resource template, three prompts, and prompt-argument completion**. It runs locally over **stdio**, or over **Streamable HTTP** with an optional static bearer token or OAuth resource-server authentication. The optional raw tool brings the total to 24.
 
 Uses the official MCP TypeScript SDK **2.1.0**. The compiled CLI is tested with the **2026-07-28 protocol and legacy clients**, over both transports. The SDK handles protocol framing, discovery/initialization, negotiation, schemas, and errors.
 
@@ -32,7 +34,7 @@ npm install -g ./hinge-mcp-0.2.0.tgz
 hinge-mcp --version
 ```
 
-The tarball contains the compiled server, bundled local SDK, TypeScript declarations, README, and MIT license. It does not need this checkout or a `file:` dependency at runtime. Rebuild before packing after source changes.
+The tarball contains the compiled server, bundled local SDK, TypeScript declarations, README and its hero image, the complete agent guide, and MIT license. It does not need this checkout or a `file:` dependency at runtime. Rebuild before packing after source changes.
 
 ## Connect a client
 
@@ -123,6 +125,20 @@ For API callers or hosts that accept an explicit bearer header, static-token mod
 
 ## Login and session lifecycle
 
+### Guided setup for assistants
+
+Ask your assistant: **"Set up my Hinge connection, help me sign in if needed, verify a profile read, then continue my task."** Hosts that expose MCP prompts can select `setup_account`; assistants can read `hinge://setup` for the full guide. Tool-only hosts receive the essential workflow in server instructions, tool descriptions, and authentication results.
+
+[AGENTS.md](https://github.com/Kuberwastaken/hinge-mcp/blob/main/AGENTS.md) contains instructions for every tool, resource, prompt, and completion workflow, plus setup, permissions, troubleshooting, and repository maintenance. It is included in the installed package and served through MCP, so an assistant does not need access to this checkout.
+
+The assistant checks the current session first, asks only for missing details, and reuses an existing session **by path** when possible. Otherwise it guides SMS login and any email challenge, then calls `hinge_me` to verify a live read. There is no API key for the user to find and no need to paste token JSON. A local session path must exist on the machine running the server.
+
+If an assistant has a connected SMS/email tool, the guide permits retrieving the matching code only with specific user authorization for that account and login. The Hinge MCP server itself cannot read SMS/email. Manual entry remains available; codes passed through chat/tool arguments may be retained by the chosen host. The guide does not grant inbox access or authorize unrelated account writes.
+
+Fetching setup instructions has no side effects. A new login sends SMS and clears prior local login state, so the guide tells assistants to establish login intent and avoid repeated sends. It also distinguishes the endpoint's bearer token/OAuth from the saved Hinge session, covers unsupported Google/Apple login, and prevents fixture tests being presented as live verification.
+
+### Authentication steps
+
 1. Call `hinge_session_status`. `loggedIn` is a **local expiry check**, not proof that Hinge still accepts the token. Use `hinge_me` to verify an existing session remotely.
 2. Call `hinge_login_start` with `phoneNumber` in E.164 format, or set `HINGE_PHONE_NUMBER`. This sends an SMS. Starting a new login clears the previous local session state.
 3. Call `hinge_login_verify_otp` with the numeric SMS code.
@@ -202,30 +218,30 @@ All tool inputs are object schemas. Unknown top-level arguments are rejected. Su
 
 ### Account access
 
-| Tool | Arguments | Result / effect |
-| --- | --- | --- |
-| `hinge_session_status` | none | Local token presence, expiry, account identity, mode, next step |
-| `hinge_login_start` | optional `phoneNumber` | Send SMS and start a fresh local login |
-| `hinge_login_verify_otp` | `otp` | Login or email challenge; persist successful state |
-| `hinge_login_verify_email` | `caseId`, `code` | Complete email verification |
-| `hinge_logout` | none | Delete local session and clear memory |
+| Tool                       | Arguments              | Result / effect                                                 |
+| -------------------------- | ---------------------- | --------------------------------------------------------------- |
+| `hinge_session_status`     | none                   | Local token presence, expiry, account identity, mode, next step |
+| `hinge_login_start`        | optional `phoneNumber` | Send SMS and start a fresh local login                          |
+| `hinge_login_verify_otp`   | `otp`                  | Login or email challenge; persist successful state              |
+| `hinge_login_verify_email` | `caseId`, `code`       | Complete email verification                                     |
+| `hinge_logout`             | none                   | Delete local session and clear memory                           |
 
 ### Account reads
 
-| Tool | Arguments and bounds | Result |
-| --- | --- | --- |
-| `hinge_me` | none | Own profile and content |
-| `hinge_profiles` | `userIds` (1–75), optional `includeRaw` | Compact profiles; missing ids |
-| `hinge_preferences` | none | Current dating preferences |
-| `hinge_recommendations` | optional `newHere`, `activeToday`, `includeProfiles`, `limit` (default 25, max 100) | Feed subjects, origins, rating tokens, summaries |
-| `hinge_standouts` | none | Upstream Standouts object |
-| `hinge_like_limit` | none | Upstream allowance information |
-| `hinge_likes_received` | `limit` (25/100), `offset` (default 0), `includeProfiles` | Likes, total, `nextOffset` |
-| `hinge_matches` | `limit` (50/200), `offset` (default 0), `includeProfiles` | Matches, total, `nextOffset` |
-| `hinge_match_detail` | `subjectId` | Connection, match note, profile |
-| `hinge_chats` | `limit` (30/200) | Existing channels, partner and last-message fields when supplied upstream |
-| `hinge_chat_messages` | Exactly one of `channelUrl` / `partnerUserId`; optional `limit` (50/200), `beforeTimestamp` | Messages ordered oldest first; lookup never creates a channel |
-| `hinge_prompts_search` | optional `query`, `category`, `limit` (30/200) | Hinge profile-prompt catalog; distinct from MCP prompts |
+| Tool                    | Arguments and bounds                                                                        | Result                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `hinge_me`              | none                                                                                        | Own profile and content                                                   |
+| `hinge_profiles`        | `userIds` (1–75), optional `includeRaw`                                                     | Compact profiles; missing ids                                             |
+| `hinge_preferences`     | none                                                                                        | Current dating preferences                                                |
+| `hinge_recommendations` | optional `newHere`, `activeToday`, `includeProfiles`, `limit` (default 25, max 100)         | Feed subjects, origins, rating tokens, summaries                          |
+| `hinge_standouts`       | none                                                                                        | Upstream Standouts object                                                 |
+| `hinge_like_limit`      | none                                                                                        | Upstream allowance information                                            |
+| `hinge_likes_received`  | `limit` (25/100), `offset` (default 0), `includeProfiles`                                   | Likes, total, `nextOffset`                                                |
+| `hinge_matches`         | `limit` (50/200), `offset` (default 0), `includeProfiles`                                   | Matches, total, `nextOffset`                                              |
+| `hinge_match_detail`    | `subjectId`                                                                                 | Connection, match note, profile                                           |
+| `hinge_chats`           | `limit` (30/200)                                                                            | Existing channels, partner and last-message fields when supplied upstream |
+| `hinge_chat_messages`   | Exactly one of `channelUrl` / `partnerUserId`; optional `limit` (50/200), `beforeTimestamp` | Messages ordered oldest first; lookup never creates a channel             |
+| `hinge_prompts_search`  | optional `query`, `category`, `limit` (30/200)                                              | Hinge profile-prompt catalog; distinct from MCP prompts                   |
 
 `includeProfiles` defaults to true. Set it false to avoid profile/content lookups. Offset pagination slices a newly fetched likes/matches list, so a changing upstream list can move between pages. For older messages, pass the earliest returned timestamp as Unix milliseconds in `beforeTimestamp`. Channels use the SDK's bounded first page; this server does not promise an exhaustive chat search.
 
@@ -233,13 +249,13 @@ All tool inputs are object schemas. Unknown top-level arguments are rejected. Su
 
 These tools are absent when `HINGE_MCP_READ_ONLY=1`. Verify the selected person, content, and intended action with the user. A timeout does not prove that a write failed; inspect the resulting account state before retrying.
 
-| Tool | Arguments | Effect |
-| --- | --- | --- |
-| `hinge_like` | `subjectId`, `ratingToken`; optional `origin`, `comment`, `contentId`, `questionText`, `answerText`, `photoUrl`, `useRose` | Upstream like request; roses consume an account allowance |
-| `hinge_skip` | `subjectId`, `ratingToken`, optional `origin` | Pass on a profile |
-| `hinge_send_message` | `subjectId`, `message` (1–4000 characters), optional `isFirstMessage` | Send a text to a match; inspect history when first-message state is omitted |
-| `hinge_update_preferences` | `preferences` | Merge supported top-level fields into current preferences, then save |
-| `hinge_raw_request` | `service` (`hinge`/`sendbird`), `method`, relative `path`, optional `body` | Advanced SDK escape hatch; also requires `HINGE_MCP_ALLOW_RAW=1` |
+| Tool                       | Arguments                                                                                                                  | Effect                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `hinge_like`               | `subjectId`, `ratingToken`; optional `origin`, `comment`, `contentId`, `questionText`, `answerText`, `photoUrl`, `useRose` | Upstream like request; roses consume an account allowance                   |
+| `hinge_skip`               | `subjectId`, `ratingToken`, optional `origin`                                                                              | Pass on a profile                                                           |
+| `hinge_send_message`       | `subjectId`, `message` (1–4000 characters), optional `isFirstMessage`                                                      | Send a text to a match; inspect history when first-message state is omitted |
+| `hinge_update_preferences` | `preferences`                                                                                                              | Merge supported top-level fields into current preferences, then save        |
+| `hinge_raw_request`        | `service` (`hinge`/`sendbird`), `method`, relative `path`, optional `body`                                                 | Advanced SDK escape hatch; also requires `HINGE_MCP_ALLOW_RAW=1`            |
 
 Use fresh rating tokens and the origin returned by Hinge. Commented likes use the SDK's text-review endpoint before the rating call. Message sending preserves the SDK's deduplication identifier and Sendbird fallback for Hinge HTTP 400/404; it does not retry ambiguous network failures.
 
@@ -255,14 +271,16 @@ Raw requests reject absolute URLs, network-path references, and backslashes. The
 
 ## Resources, prompts, and completion
 
-| Surface | Name / URI | Behavior |
-| --- | --- | --- |
-| Resource | `hinge://usage` | Plain-text usage and trust guidance; no network |
-| Resource | `hinge://session` | Local token presence and expiry; no secrets or network |
-| Resource template | `hinge://profiles/{userId}` | Read a known public-profile id through the authenticated SDK |
-| Prompt | `review_profile` | Optional `focus`; drafts a profile-review workflow |
-| Prompt | `draft_reply` | Required `channelUrl`, optional `tone`; drafts replies without sending |
-| Completion | Prompt `focus` / `tone` | Suggested values such as `prompts` and `friendly` |
+| Surface           | Name / URI                  | Behavior                                                                                |
+| ----------------- | --------------------------- | --------------------------------------------------------------------------------------- |
+| Resource          | `hinge://setup`             | Full agent guide: onboarding, all tools, workflows, and credential handling; no network |
+| Resource          | `hinge://usage`             | Plain-text usage and trust guidance; no network                                         |
+| Resource          | `hinge://session`           | Local token presence and expiry; no secrets or network                                  |
+| Resource template | `hinge://profiles/{userId}` | Read a known public-profile id through the authenticated SDK                            |
+| Prompt            | `setup_account`             | No arguments; guides session reuse or login and verification without executing it       |
+| Prompt            | `review_profile`            | Optional `focus`; drafts a profile-review workflow                                      |
+| Prompt            | `draft_reply`               | Required `channelUrl`, optional `tone`; drafts replies without sending                  |
+| Completion        | Prompt `focus` / `tone`     | Suggested values such as `prompts` and `friendly`                                       |
 
 Resources represent context; prompts produce user-invoked workflows; tools perform bounded operations. Private profile resources are not exhaustively enumerated. Profile/message text is treated as untrusted data. Prompts never independently execute account writes. Sampling, elicitation, roots, tasks, live subscriptions, and a graphical MCP App are not required or advertised.
 
@@ -270,23 +288,23 @@ Resources represent context; prompts produce user-invoked workflows; tools perfo
 
 Environment variables are read at process startup. `.env` is **not** loaded automatically; optionally use `node --env-file=.env mcp/dist/cli.js` and the checked-in `.env.example`. Keep real values outside Git. Boolean values accept `1/0`, `true/false`, `yes/no`, and `on/off`.
 
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `HINGE_PHONE_NUMBER` | unset | E.164 number; can also be supplied to login |
-| `HINGE_SESSION_FILE` | `~/.hinge-mcp/session.json` | Absolute or working-directory-relative private session path |
-| `HINGE_MCP_READ_ONLY` | `0` | Hide account-write tools; login/logout still available |
-| `HINGE_MCP_ALLOW_RAW` | `0` | Enable raw tool unless read-only |
-| `HINGE_MCP_HTTP` | `0` | Select HTTP; `--http [port]` also selects it |
-| `HINGE_MCP_HOST` | `127.0.0.1` | HTTP bind address |
-| `HINGE_MCP_PORT` | `3939` | Port 0–65535; 0 allocates an ephemeral port; CLI port wins |
-| `HINGE_MCP_TOKEN` | unset | Static MCP bearer token; mutually exclusive with OAuth |
-| `HINGE_MCP_PUBLIC_URL` | unset | Exact public HTTPS URL ending in `/mcp` |
-| `HINGE_MCP_ALLOWED_ORIGINS` | empty | Additional exact browser Origins, comma separated |
-| `HINGE_MCP_OAUTH_ISSUER` | unset | Exact external token issuer |
-| `HINGE_MCP_OAUTH_JWKS_URL` | unset | HTTPS public signing-key endpoint |
-| `HINGE_MCP_OAUTH_SUBJECT` | unset | Only this token subject may access the account |
-| `HINGE_MCP_TIMEOUT_MS` | `30000` | Operation deadline, including queue time; 100–120000 ms |
-| `HINGE_MCP_DEBUG` | `0` | Request service/method/status/timing to stderr; no bodies, tokens, OTPs or URLs |
+| Variable                    | Default                     | Meaning                                                                         |
+| --------------------------- | --------------------------- | ------------------------------------------------------------------------------- |
+| `HINGE_PHONE_NUMBER`        | unset                       | E.164 number; can also be supplied to login                                     |
+| `HINGE_SESSION_FILE`        | `~/.hinge-mcp/session.json` | Absolute or working-directory-relative private session path                     |
+| `HINGE_MCP_READ_ONLY`       | `0`                         | Hide account-write tools; login/logout still available                          |
+| `HINGE_MCP_ALLOW_RAW`       | `0`                         | Enable raw tool unless read-only                                                |
+| `HINGE_MCP_HTTP`            | `0`                         | Select HTTP; `--http [port]` also selects it                                    |
+| `HINGE_MCP_HOST`            | `127.0.0.1`                 | HTTP bind address                                                               |
+| `HINGE_MCP_PORT`            | `3939`                      | Port 0–65535; 0 allocates an ephemeral port; CLI port wins                      |
+| `HINGE_MCP_TOKEN`           | unset                       | Static MCP bearer token; mutually exclusive with OAuth                          |
+| `HINGE_MCP_PUBLIC_URL`      | unset                       | Exact public HTTPS URL ending in `/mcp`                                         |
+| `HINGE_MCP_ALLOWED_ORIGINS` | empty                       | Additional exact browser Origins, comma separated                               |
+| `HINGE_MCP_OAUTH_ISSUER`    | unset                       | Exact external token issuer                                                     |
+| `HINGE_MCP_OAUTH_JWKS_URL`  | unset                       | HTTPS public signing-key endpoint                                               |
+| `HINGE_MCP_OAUTH_SUBJECT`   | unset                       | Only this token subject may access the account                                  |
+| `HINGE_MCP_TIMEOUT_MS`      | `30000`                     | Operation deadline, including queue time; 100–120000 ms                         |
+| `HINGE_MCP_DEBUG`           | `0`                         | Request service/method/status/timing to stderr; no bodies, tokens, OTPs or URLs |
 
 OAuth requires all three OAuth variables plus the public URL. Malformed ports, booleans, phone numbers, URLs, and unknown CLI arguments fail startup. `--help` and `--version` print to stdout and exit; normal stdio operation reserves stdout for MCP.
 
@@ -353,36 +371,36 @@ Use Inspector's UI to discover tools/resources/prompts and inspect schemas. For 
 
 ### Source map
 
-| Path | Responsibility |
-| --- | --- |
-| `mcp/src/server.ts` | Shared feature factory and server instructions |
-| `mcp/src/tools/` | Account auth, reads, writes, search/fetch |
-| `mcp/src/surfaces.ts` | Resources, prompts, completion |
-| `mcp/src/output-schemas.ts` | Stable result shapes |
-| `mcp/src/client.ts` | Account context, queue, cache, session lifecycle |
-| `mcp/src/transport.ts` | Upstream allowlist, cancellation, size limits |
-| `mcp/src/http.ts`, `oauth.ts` | HTTP front door, CORS, bearer/JWT verification |
-| `mcp/src/storage.ts` | Confined atomic session storage |
-| `mcp/test/` | MCP and subprocess integration/security tests |
-| `sdk/` | Preserved MIT upstream SDK, docs and tests |
-| `scripts/` | Isolated package test and optional live smoke test |
+| Path                          | Responsibility                                     |
+| ----------------------------- | -------------------------------------------------- |
+| `mcp/src/server.ts`           | Shared feature factory and server instructions     |
+| `mcp/src/tools/`              | Account auth, reads, writes, search/fetch          |
+| `mcp/src/surfaces.ts`         | Resources, prompts, completion                     |
+| `mcp/src/output-schemas.ts`   | Stable result shapes                               |
+| `mcp/src/client.ts`           | Account context, queue, cache, session lifecycle   |
+| `mcp/src/transport.ts`        | Upstream allowlist, cancellation, size limits      |
+| `mcp/src/http.ts`, `oauth.ts` | HTTP front door, CORS, bearer/JWT verification     |
+| `mcp/src/storage.ts`          | Confined atomic session storage                    |
+| `mcp/test/`                   | MCP and subprocess integration/security tests      |
+| `sdk/`                        | Preserved MIT upstream SDK, docs and tests         |
+| `scripts/`                    | Isolated package test and optional live smoke test |
 
 ## Troubleshooting
 
-| Symptom | Check |
-| --- | --- |
-| Host cannot launch | Use Node 22+, an absolute built CLI path, and a reachable Node executable |
-| Invalid JSON on stdio | Launch `node .../cli.js` directly; route wrapper/log output to stderr |
-| Session rejected by Hinge | Local expiry is only a hint; log in again after confirming the account |
-| Email verification cannot finish | Use `caseId` from the most recent OTP result and the matching emailed code |
-| Corrupt/unreadable session | Fix file ownership or move the file aside and log in again; the server fails rather than silently overwriting it |
-| HTTP 401 | Supply bearer header, or check JWT issuer/audience/subject/expiry and OAuth metadata |
-| HTTP 403 | Check Host, Origin, configured public URL, and OAuth scope |
-| HTTP 405 on GET | Expected for stateless Streamable HTTP; configure `/mcp`, not an old `/sse` client |
-| No browser citation for search | Private Hinge records have no verified public URL; the output remains usable as tool data |
-| Empty chat lookup | There may be no existing DM; the read tool intentionally does not create one |
-| Timeout / HTTP 429 | Wait, narrow the request, and verify account state before retrying writes |
-| SDK schema drift | Reproduce a read failure locally, redact private data, and update the SDK adapter and fixtures together |
+| Symptom                          | Check                                                                                                            |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Host cannot launch               | Use Node 22+, an absolute built CLI path, and a reachable Node executable                                        |
+| Invalid JSON on stdio            | Launch `node .../cli.js` directly; route wrapper/log output to stderr                                            |
+| Session rejected by Hinge        | Local expiry is only a hint; log in again after confirming the account                                           |
+| Email verification cannot finish | Use `caseId` from the most recent OTP result and the matching emailed code                                       |
+| Corrupt/unreadable session       | Fix file ownership or move the file aside and log in again; the server fails rather than silently overwriting it |
+| HTTP 401                         | Supply bearer header, or check JWT issuer/audience/subject/expiry and OAuth metadata                             |
+| HTTP 403                         | Check Host, Origin, configured public URL, and OAuth scope                                                       |
+| HTTP 405 on GET                  | Expected for stateless Streamable HTTP; configure `/mcp`, not an old `/sse` client                               |
+| No browser citation for search   | Private Hinge records have no verified public URL; the output remains usable as tool data                        |
+| Empty chat lookup                | There may be no existing DM; the read tool intentionally does not create one                                     |
+| Timeout / HTTP 429               | Wait, narrow the request, and verify account state before retrying writes                                        |
+| SDK schema drift                 | Reproduce a read failure locally, redact private data, and update the SDK adapter and fixtures together          |
 
 ## Provenance and official references
 
@@ -394,5 +412,7 @@ Implementation references:
 - [MCP tools](https://modelcontextprotocol.io/specification/2026-07-28/server/tools), [Streamable HTTP](https://modelcontextprotocol.io/specification/2026-07-28/basic/transports/streamable-http), and [authorization](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
 - [Official TypeScript SDK v2](https://ts.sdk.modelcontextprotocol.io/v2/), [HTTP serving](https://ts.sdk.modelcontextprotocol.io/v2/serving/http.html), and [legacy compatibility](https://ts.sdk.modelcontextprotocol.io/v2/serving/legacy-clients.html)
 - [Upstream Hinge SDK](https://github.com/wrsrsh/hinge-ts)
+
+Built on [wrsrsh/hinge-ts](https://github.com/wrsrsh/hinge-ts). Credit and thanks to the upstream author for the Hinge SDK; its history and MIT attribution are preserved.
 
 License: **MIT**, including upstream attribution. There is no npm publishing workflow or hosted service configured by this repository.

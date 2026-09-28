@@ -21,6 +21,8 @@
     "dist/index.js.map",
     "dist/**/*.d.ts",
     "README.md",
+    "AGENTS.md",
+    "assets/hero.png",
     "LICENSE-MIT"
   ],
   "scripts": {

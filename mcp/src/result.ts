@@ -54,7 +54,7 @@ export function describeError(error: unknown): string {
     return "Email verification required; use hinge_login_verify_email.";
   if (error instanceof HingeError) {
     if (error.status === 401 || error.kind === "auth")
-      return "Hinge session missing or expired; run hinge_login_start and hinge_login_verify_otp.";
+      return "Hinge session missing or expired; read hinge://setup or use setup_account. Reuse an existing session or establish login intent before hinge_login_start and hinge_login_verify_otp.";
     if (error.status === 429)
       return "Hinge rate limit reached. Wait before retrying; no automatic retry was made.";
     return `Hinge request failed${error.status ? ` (HTTP ${error.status})` : ""}. No upstream response body was exposed.`;

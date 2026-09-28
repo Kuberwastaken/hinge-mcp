@@ -128,6 +128,22 @@ for (const era of ["2026-07-28", "legacy"])
         };
         const tools = (await client.listTools()).tools;
         assert.equal(new Set(tools.map((t) => t.name)).size, tools.length);
+        assert.match(client.getInstructions(), /hinge:\/\/setup/);
+        const setup = await client.readResource({ uri: "hinge://setup" });
+        const onboarding = await client.getPrompt({ name: "setup_account" });
+        const guide = setup.contents[0].text;
+        assert.equal(setup.contents[0].mimeType, "text/markdown");
+        assert.ok(onboarding.messages[0].content.text.includes(guide));
+        for (const tool of [...tools, { name: "hinge_raw_request" }])
+          assert.ok(
+            guide.includes(`\`${tool.name}\``),
+            `missing instructions: ${tool.name}`,
+          );
+        assert.equal(
+          upstream.requests.length,
+          0,
+          "setup discovery never sends SMS or contacts Hinge",
+        );
         assert.equal((await call("hinge_session_status")).loggedIn, false);
         assert.equal((await call("hinge_login_start")).status, "otp_sent");
         const otp = await call("hinge_login_verify_otp", { otp: "123456" });
@@ -161,7 +177,7 @@ for (const era of ["2026-07-28", "legacy"])
         assert.equal(found.results[0].id, "match:1002");
         await call("fetch", { id: found.results[0].id });
         await call("fetch", { id: "chat:ch-1" });
-        assert.equal((await client.listResources()).resources.length, 2);
+        assert.equal((await client.listResources()).resources.length, 3);
         assert.equal(
           (await client.listResourceTemplates()).resourceTemplates.length,
           1,
@@ -172,7 +188,7 @@ for (const era of ["2026-07-28", "legacy"])
           uri: "hinge://profiles/1002",
         });
         assert.match(profile.contents[0].text, /Sam/);
-        assert.equal((await client.listPrompts()).prompts.length, 2);
+        assert.equal((await client.listPrompts()).prompts.length, 3);
         await client.getPrompt({
           name: "review_profile",
           arguments: { focus: "prompts" },

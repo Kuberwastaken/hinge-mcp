@@ -34,6 +34,9 @@ try {
     ]),
   );
   const files = packed[0].files.map((f) => f.path);
+  for (const required of ["README.md", "AGENTS.md", "assets/hero.png"])
+    if (!files.includes(required))
+      throw new Error(`Missing packaged documentation asset: ${required}`);
   if (files.some((f) => /session\.json|^test\/|^src\/|\.env$/.test(f)))
     throw new Error("Unexpected private/development files in package");
   await writeFile(
