@@ -1,4 +1,4 @@
-import { Email2FAError, HingeError } from "./errors.js";
+import { Email2FAError, HingeError, toHingeError } from "./errors.js";
 import { toApiEnumArray, toApiEnumValue } from "./enums.js";
 import type { HingeLogger } from "./logger.js";
 import { defaultSettings, type HingeSettings } from "./settings.js";
@@ -73,6 +73,8 @@ import { HingePromptsManager } from "./prompts-manager.js";
 import { parseSendbirdWsFrame, SendbirdWsSubscription, type SendbirdWsEvent } from "./ws.js";
 
 export const DEFAULT_PUBLIC_IDS_BATCH_SIZE = 75;
+
+const REALTIME_LOGIN_TIMEOUT_MS = 10_000;
 
 const DEFAULT_RECS_FETCH_CONFIG: RecsFetchConfig = {
   multiFetchCount: 3,
@@ -184,6 +186,8 @@ export class HingeClient {
   publicIdsBatchSize: number;
   lastRecsV2Call = 0;
   private realtimeConnection: SendbirdRealtimeConnection | undefined;
+  private realtimeConnecting: Promise<SendbirdRealtimeConnection> | undefined;
+  private sessionKeyWaiters: Array<() => void> = [];
   private eventHub = new EventHub();
   private pendingReadRequests = new Map<string, { resolve: (value: SendbirdReadResponse) => void; reject: (error: Error) => void }>();
 
@@ -371,9 +375,22 @@ export class HingeClient {
     if (this.realtimeConnection) {
       return this.realtimeConnection;
     }
+    if (this.realtimeConnecting) {
+      return this.realtimeConnecting;
+    }
     if (!this.realtimeTransport) {
       throw new HingeError("unsupported_runtime", "Sendbird realtime requires a SendbirdRealtimeTransport; use ProxySendbirdRealtimeTransport in browsers");
     }
+    const connecting = this.connectRealtime(this.realtimeTransport);
+    this.realtimeConnecting = connecting;
+    try {
+      return await connecting;
+    } finally {
+      this.realtimeConnecting = undefined;
+    }
+  }
+
+  private async connectRealtime(realtimeTransport: SendbirdRealtimeTransport): Promise<SendbirdRealtimeConnection> {
     await this.ensureSendbirdAuth();
     const userId = this.hingeAuth?.identityId ?? "";
     const url = `${this.config.sendbirdWsUrl}/?p=iOS&sv=${encodeURIComponent(this.config.sendbirdSdkVersion)}&pv=${encodeURIComponent(this.config.osVersion)}&uikit_config=0&use_local_cache=0&include_extra_data=premium_feature_list,file_upload_size_limit,emoji_hash,application_attributes,notifications,message_template,ai_agent&include_poll_details=1&user_id=${encodeURIComponent(userId)}&ai=${encodeURIComponent(this.config.sendbirdAppId)}&pmce=1&expiring_session=0&config_ts=0`;
@@ -407,10 +424,34 @@ export class HingeClient {
     if (this.sendbirdSessionKey) {
       connectRequest.sessionKey = this.sendbirdSessionKey;
     }
-    const connection = await this.realtimeTransport.connect(connectRequest);
+    const connection = await realtimeTransport.connect(connectRequest);
     this.realtimeConnection = connection;
     this.pumpRealtime(connection);
+    await this.waitForSessionKey(REALTIME_LOGIN_TIMEOUT_MS);
     return connection;
+  }
+
+  private waitForSessionKey(timeoutMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      const timer = globalThis.setTimeout(() => {
+        this.sessionKeyWaiters = this.sessionKeyWaiters.filter((waiter) => waiter !== done);
+        this.logger?.warn?.("sendbird LOGI not received before realtime startup returned");
+        resolve();
+      }, timeoutMs);
+      const done = () => {
+        globalThis.clearTimeout(timer);
+        resolve();
+      };
+      this.sessionKeyWaiters.push(done);
+    });
+  }
+
+  private settleSessionKeyWaiters(): void {
+    const waiters = this.sessionKeyWaiters;
+    this.sessionKeyWaiters = [];
+    for (const waiter of waiters) {
+      waiter();
+    }
   }
 
   subscribeEvents(): SendbirdWsSubscription {
@@ -427,9 +468,24 @@ export class HingeClient {
   }
 
   closeRealtime(code?: number, reason?: string): void {
-    this.realtimeConnection?.close(code, reason);
+    const connection = this.realtimeConnection;
     this.realtimeConnection = undefined;
+    connection?.close(code, reason);
+    this.rejectPendingReads(new HingeError("network", "sendbird websocket closed"));
+  }
+
+  failPendingRead(reqId: string, error: unknown): void {
+    const pending = this.pendingReadRequests.get(reqId);
+    this.pendingReadRequests.delete(reqId);
+    pending?.reject(toHingeError("network", "sendbird READ send failed", error));
+  }
+
+  private rejectPendingReads(error: HingeError): void {
+    const pending = [...this.pendingReadRequests.values()];
     this.pendingReadRequests.clear();
+    for (const request of pending) {
+      request.reject(error);
+    }
   }
 
   async saveSession(path: string): Promise<void> {
@@ -511,7 +567,10 @@ export class HingeClient {
           globalThis.clearTimeout(timeout);
           resolve(value);
         },
-        reject
+        reject: (error) => {
+          globalThis.clearTimeout(timeout);
+          reject(error);
+        }
       });
     });
   }
@@ -520,8 +579,9 @@ export class HingeClient {
     try {
       for await (const frame of connection.events()) {
         const event = parseSendbirdWsFrame(frame);
-        if (event.kind === "sessionKey") {
+        if (event.kind === "sessionKey" && event.key) {
           this.sendbirdSessionKey = event.key;
+          this.settleSessionKeyWaiters();
           if (this.sessionPath) {
             await this.saveSession(this.sessionPath).catch(() => undefined);
           }
@@ -542,6 +602,13 @@ export class HingeClient {
     } catch (error) {
       this.logger?.error?.("sendbird realtime pump failed", error);
       this.eventHub.publish(`__ERROR__:${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      if (this.realtimeConnection === connection) {
+        this.realtimeConnection = undefined;
+      }
+      this.settleSessionKeyWaiters();
+      this.rejectPendingReads(new HingeError("network", "sendbird websocket closed"));
+      this.eventHub.close();
     }
   }
 }
@@ -632,6 +699,7 @@ export class RecommendationsApi {
     let aggregated: RecommendationsResponse | undefined;
     let completed = 0;
     let rateLimitAttempts = 0;
+    let lastRateLimitError: HingeError | undefined;
     while (completed < fetchCount) {
       const elapsed = Date.now() - this.client.lastRecsV2Call;
       const delayMs = this.client.recsFetchConfig.requestDelayMs;
@@ -647,6 +715,7 @@ export class RecommendationsApi {
       } catch (error) {
         this.client.lastRecsV2Call = Date.now();
         if (error instanceof HingeError && (error.status === 429 || error.status === 503)) {
+          lastRateLimitError = error;
           rateLimitAttempts += 1;
           if (rateLimitAttempts > this.client.recsFetchConfig.rateLimitRetries) {
             break;
@@ -656,6 +725,9 @@ export class RecommendationsApi {
         }
         throw error;
       }
+    }
+    if (!aggregated && lastRateLimitError) {
+      throw lastRateLimitError;
     }
     const out = normalizeRecommendationsResponse(aggregated ?? { feeds: [] });
     if (this.client.autoPersist) {
@@ -1070,10 +1142,10 @@ export class ChatApi {
     const [content] = await this.client.profiles.publicContent([partner.userId]);
     const manager = await this.client.prompts.manager().catch(() => undefined);
     const messages = await this.fullMessages(input.channelUrl);
-    const displayName = profile?.profile.firstName ?? partner.nickname ?? partner.userId;
+    const displayName = profile?.profile?.firstName ?? partner.nickname ?? partner.userId;
     const lines = [`Chat with ${displayName}`, `Channel: ${input.channelUrl}`, `Exported at ${new Date().toISOString()}`, ""];
     for (const message of messages) {
-      const sender = message.user.userId === selfUserId ? "You" : message.user.nickname || displayName;
+      const sender = message.user?.userId === selfUserId ? "You" : message.user?.nickname || displayName;
       const body = message.message?.trim() || message.data?.trim() || (message.customType ? `[${message.customType} message]` : "[non-text message]");
       lines.push(`${new Date(parseTimestamp(message.createdAt) ?? Date.now()).toISOString()} - ${sender}: ${body}`);
     }
@@ -1087,16 +1159,16 @@ export class ChatApi {
 
   async createDistinctDm(selfUserId: string, peerUserId: string, dataMm: number): Promise<unknown> {
     return this.client.requestJson("sendbird", "POST", "/group_channels?", {
-      isEphemeral: false,
-      isExclusive: false,
+      is_ephemeral: false,
+      is_exclusive: false,
       data: `{\n  "mm" : ${dataMm}\n}`,
-      userIds: [peerUserId, selfUserId],
-      isSuper: false,
-      isDistinct: true,
+      user_ids: [peerUserId, selfUserId],
+      is_super: false,
+      is_distinct: true,
       strict: false,
-      isBroadcast: false,
-      messageSurvivalSeconds: -1,
-      isPublic: false
+      is_broadcast: false,
+      message_survival_seconds: -1,
+      is_public: false
     });
   }
 
@@ -1127,11 +1199,12 @@ export class ChatApi {
     try {
       return await this.client.requestJson("hinge", "POST", "/message/send", body);
     } catch (error) {
-      if (!channelUrl || !shouldFallbackToSendbirdSend(error)) {
+      const text = body.messageData?.message;
+      if (!channelUrl || typeof text !== "string" || !text.trim() || !shouldFallbackToSendbirdSend(error)) {
         throw error;
       }
       this.client.logger?.warn?.("hinge message send failed; retrying through sendbird", error);
-      return this.sendSendbirdMessage(channelUrl, body.messageData.message, body.dedupId);
+      return this.sendSendbirdMessage(channelUrl, text, body.dedupId);
     }
   }
 
@@ -1160,7 +1233,12 @@ export class ChatApi {
     await this.client.ensureRealtime();
     const reqId = randomUuid();
     const response = this.client.registerPendingRead(reqId);
-    this.client.sendRealtimeCommand(`READ${JSON.stringify({ req_id: reqId, channel_url: channelUrl })}`);
+    try {
+      this.client.sendRealtimeCommand(`READ${JSON.stringify({ req_id: reqId, channel_url: channelUrl })}`);
+    } catch (error) {
+      this.client.failPendingRead(reqId, error);
+      throw error;
+    }
     return response;
   }
 
@@ -1257,6 +1335,12 @@ class EventHub {
       subscriber.push(value);
     }
   }
+
+  close(): void {
+    for (const subscriber of [...this.subscribers]) {
+      subscriber.close();
+    }
+  }
 }
 
 class AsyncQueue<T> implements AsyncIterable<T> {
@@ -1267,6 +1351,9 @@ class AsyncQueue<T> implements AsyncIterable<T> {
   constructor(private readonly onClose: () => void) {}
 
   push(value: T): void {
+    if (this.closed) {
+      return;
+    }
     const waiter = this.waiters.shift();
     if (waiter) {
       waiter({ value, done: false });
@@ -1275,20 +1362,34 @@ class AsyncQueue<T> implements AsyncIterable<T> {
     }
   }
 
+  close(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    const waiters = this.waiters.splice(0);
+    for (const waiter of waiters) {
+      waiter({ value: undefined as T, done: true });
+    }
+    this.onClose();
+  }
+
   async *[Symbol.asyncIterator](): AsyncIterator<T> {
     try {
-      while (!this.closed) {
+      while (true) {
         if (this.values.length > 0) {
           yield this.values.shift() as T;
           continue;
+        }
+        if (this.closed) {
+          return;
         }
         const next = await new Promise<IteratorResult<T>>((resolve) => this.waiters.push(resolve));
         if (next.done) return;
         yield next.value;
       }
     } finally {
-      this.closed = true;
-      this.onClose();
+      this.close();
     }
   }
 }

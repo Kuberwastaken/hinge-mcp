@@ -226,13 +226,16 @@ class BrowserSocketConnection implements SendbirdRealtimeConnection {
   }
 }
 
+const WS_OPEN = 1;
+
 function waitForOpen(socket: WebSocket): Promise<void> {
-  if (socket.readyState === WebSocket.OPEN) {
+  if (socket.readyState === WS_OPEN) {
     return Promise.resolve();
   }
   return new Promise((resolve, reject) => {
     socket.addEventListener("open", () => resolve(), { once: true });
     socket.addEventListener("error", () => reject(new HingeError("network", "websocket open failed")), { once: true });
+    socket.addEventListener("close", (event) => reject(new HingeError("network", `websocket closed before open: ${event.code} ${event.reason}`)), { once: true });
   });
 }
 

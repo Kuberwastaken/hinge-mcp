@@ -189,3 +189,126 @@ test("missing transport errors clearly", async () => {
   const client = HingeClient.builder().phoneNumber("+15555550123").build();
   await assert.rejects(() => client.likes.limit(), HingeError);
 });
+
+const DM_LOOKUP_PATH = "/users/user-1/my_group_channels?&members_exactly_in=peer-1&show_latest_message=false&distinct_mode=all&hidden_mode=unhidden_only&show_pinned_messages=false&show_metadata=true&member_state_filter=all&user_id=user-1&is_explicit_request=true&public_mode=all&include_left_channel=false&show_conversation=false&show_frozen=true&is_feed_channel=false&show_delivery_receipt=true&unread_filter=all&super_mode=all&show_member=true&show_read_receipt=true&order=chronological&show_empty=true&include_chat_notification=false&limit=1";
+
+function authedClient(transport, extra = {}) {
+  let builder = HingeClient.builder().phoneNumber("+15555550123").transport(transport);
+  if (extra.realtimeTransport) builder = builder.realtimeTransport(extra.realtimeTransport);
+  const client = builder.build();
+  client.hingeAuth = { identityId: "user-1", token: "hinge-token", expires: "2999-01-01T00:00:00Z" };
+  client.sendbirdAuth = { token: "sendbird-token", expires: "2999-01-01T00:00:00Z" };
+  return client;
+}
+
+test("creates distinct dm with sendbird snake_case body", async () => {
+  const transport = new MockTransport()
+    .on("GET", DM_LOOKUP_PATH, () => ({ body: { channels: [] } }))
+    .on("POST", "/group_channels?", () => ({ body: { channel_url: "created-1" } }));
+  const client = authedClient(transport);
+
+  const channelUrl = await client.chat.getOrCreateDmChannel("user-1", "peer-1");
+
+  const create = transport.requests.find((request) => request.pathOrUrl === "/group_channels?");
+  assert.equal(channelUrl, "created-1");
+  assert.deepEqual(create.body.user_ids, ["peer-1", "user-1"]);
+  assert.equal(create.body.is_distinct, true);
+  assert.equal(create.body.userIds, undefined);
+});
+
+test("send message does not fall back when there is no text to resend", async () => {
+  const transport = new MockTransport()
+    .on("GET", DM_LOOKUP_PATH, () => ({ body: { channels: [{ channel_url: "c1" }] } }))
+    .on("POST", "/message/send", () => ({ status: 400, body: { message: "Error" } }));
+  const client = authedClient(transport);
+
+  await assert.rejects(() => client.chat.sendMessage({
+    ays: false,
+    matchMessage: true,
+    messageType: "gif",
+    messageData: { message: "" },
+    subjectId: "peer-1",
+    origin: "connection"
+  }), (error) => error instanceof HingeError && error.status === 400);
+  assert.equal(transport.requests.some((request) => request.pathOrUrl === "/group_channels/c1/messages"), false);
+});
+
+test("recommendations surface rate limiting when nothing was fetched", async () => {
+  const transport = new MockTransport().on("POST", "/rec/v2", () => new HingeError("http", "status 429: {}", { status: 429 }));
+  const client = HingeClient.builder()
+    .phoneNumber("+15555550123")
+    .transport(transport)
+    .recsFetchConfig({ multiFetchCount: 1, requestDelayMs: 0, rateLimitRetries: 1, rateLimitBackoffMs: 0 })
+    .build();
+  client.hingeAuth = { identityId: "user-1", token: "hinge-token", expires: "2999-01-01T00:00:00Z" };
+
+  await assert.rejects(() => client.recommendations.get(), (error) => error instanceof HingeError && error.status === 429);
+});
+
+class MockRealtimeConnection {
+  sent = [];
+  queue = [];
+  waiters = [];
+  closed = false;
+
+  send(frame) {
+    this.sent.push(frame);
+  }
+
+  close() {
+    this.emit(undefined);
+  }
+
+  emit(frame) {
+    const waiter = this.waiters.shift();
+    if (waiter) waiter(frame);
+    else this.queue.push(frame);
+  }
+
+  async *events() {
+    while (true) {
+      const frame = this.queue.length ? this.queue.shift() : await new Promise((resolve) => this.waiters.push(resolve));
+      if (frame === undefined) return;
+      yield frame;
+    }
+  }
+}
+
+class MockRealtimeTransport {
+  connections = [];
+
+  async connect() {
+    const connection = new MockRealtimeConnection();
+    this.connections.push(connection);
+    queueMicrotask(() => connection.emit('LOGI{"key":"session-key-1","user_id":"user-1"}'));
+    return connection;
+  }
+}
+
+test("realtime connect waits for login, dedups concurrent connects, and recovers after close", async () => {
+  const realtimeTransport = new MockRealtimeTransport();
+  const client = authedClient(new MockTransport(), { realtimeTransport });
+
+  const [first, second] = await Promise.all([client.chat.subscribeEvents(), client.chat.subscribeEvents()]);
+  assert.equal(realtimeTransport.connections.length, 1);
+  assert.equal(client.sendbirdSessionKey, "session-key-1");
+
+  const connection = realtimeTransport.connections[0];
+  const iterator = first[Symbol.asyncIterator]();
+  connection.emit('PONG{"ts":1}');
+  assert.equal((await iterator.next()).value.kind, "pong");
+
+  const pendingRead = client.chat.markRead("channel-1");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.match(connection.sent[0], /^READ\{/);
+  connection.close();
+  await assert.rejects(pendingRead, (error) => error instanceof HingeError && error.kind === "network");
+  assert.deepEqual(await iterator.next(), { value: undefined, done: true });
+  const secondIterator = second[Symbol.asyncIterator]();
+  assert.equal((await secondIterator.next()).value.kind, "pong");
+  assert.deepEqual(await secondIterator.next(), { value: undefined, done: true });
+
+  await client.chat.ping();
+  assert.equal(realtimeTransport.connections.length, 2);
+  assert.match(realtimeTransport.connections[1].sent[0], /^PING\{/);
+});
