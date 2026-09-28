@@ -1,54 +1,16 @@
 {
-  "name": "hinge-ts",
-  "version": "0.1.1",
-  "description": "Typed SDK for Hinge REST and Sendbird chat through a browser-safe proxy.",
+  "name": "hinge-mcp-workspace",
+  "private": true,
+  "version": "0.2.0",
   "type": "module",
-  "license": "MIT",
-  "keywords": [
-    "hinge",
-    "api",
-    "sendbird",
-    "sdk",
-    "typescript"
-  ],
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/wrsrsh/hinge-ts.git"
-  },
-  "homepage": "https://github.com/wrsrsh/hinge-ts#readme",
-  "bugs": {
-    "url": "https://github.com/wrsrsh/hinge-ts/issues"
-  },
-  "sideEffects": false,
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    },
-    "./proxy": {
-      "types": "./dist/proxy.d.ts",
-      "import": "./dist/proxy.js"
-    }
-  },
-  "types": "./dist/index.d.ts",
-  "files": [
-    "dist",
-    "docs",
-    "examples",
-    "README.md",
-    "LICENSE-MIT"
-  ],
+  "workspaces": ["sdk", "mcp"],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "npm run build && node --test test/*.test.mjs",
-    "prepack": "npm run build",
-    "pack:dry": "npm --cache .npm-cache pack --dry-run"
+    "build": "npm run build -w sdk && npm run build -w mcp",
+    "typecheck": "npm run build -w sdk && npm run typecheck --workspaces",
+    "test": "npm run build && node --test sdk/test/*.test.mjs mcp/test/*.test.mjs",
+    "start": "node mcp/dist/cli.js",
+    "start:http": "node mcp/dist/cli.js --http",
+    "pack:dry": "npm pack --workspace mcp --dry-run"
   },
-  "devDependencies": {
-    "typescript": "^5.9.0"
-  },
-  "engines": {
-    "node": ">=20"
-  }
+  "engines": { "node": ">=22" }
 }

@@ -1,69 +1,28 @@
 name: CI
-
 on:
-  pull_request:
   push:
-    branches:
-      - main
+    branches: [main]
+  pull_request:
   workflow_dispatch:
-
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
-
 jobs:
   test:
-    name: Test
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [22, 24]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
       - run: npm run pack:dry
-
-  mcp:
-    name: MCP server
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            mcp/package-lock.json
-      - run: npm ci
-      - run: npm run build
-      - run: npm ci
-        working-directory: mcp
-      - run: npm run typecheck
-        working-directory: mcp
-      - run: npm test
-        working-directory: mcp
-
-  required:
-    name: Required checks
-    if: always()
-    needs:
-      - test
-      - mcp
-    runs-on: ubuntu-latest
-    steps:
-      - name: Fail if any required job did not pass
-        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
-        run: exit 1
-      - name: All required jobs passed
-        run: echo "All required CI jobs passed."

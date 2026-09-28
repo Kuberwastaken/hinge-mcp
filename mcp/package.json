@@ -1,6 +1,6 @@
 {
   "name": "hinge-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server exposing the hinge-ts SDK to Claude, ChatGPT, and other MCP clients.",
   "type": "module",
   "license": "MIT",
@@ -19,22 +19,30 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node build.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test test/*.test.mjs",
     "start": "node dist/cli.js",
-    "start:http": "node dist/cli.js --http"
+    "start:http": "node dist/cli.js --http",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "hinge-ts": "file:..",
     "zod": "^3.25.0"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "hinge-ts": "file:../sdk",
+    "esbuild": "^0.25.12"
   },
   "engines": {
-    "node": ">=20"
-  }
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kuberwastaken/hinge-mcp.git",
+    "directory": "mcp"
+  },
+  "homepage": "https://github.com/Kuberwastaken/hinge-mcp#readme"
 }

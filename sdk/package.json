@@ -1,0 +1,54 @@
+{
+  "name": "hinge-ts",
+  "version": "0.1.1",
+  "description": "Typed SDK for Hinge REST and Sendbird chat through a browser-safe proxy.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "hinge",
+    "api",
+    "sendbird",
+    "sdk",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wrsrsh/hinge-ts.git"
+  },
+  "homepage": "https://github.com/wrsrsh/hinge-ts#readme",
+  "bugs": {
+    "url": "https://github.com/wrsrsh/hinge-ts/issues"
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./proxy": {
+      "types": "./dist/proxy.d.ts",
+      "import": "./dist/proxy.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "docs",
+    "examples",
+    "README.md",
+    "LICENSE-MIT"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "prepack": "npm run build",
+    "pack:dry": "npm --cache .npm-cache pack --dry-run"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

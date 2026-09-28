@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtemp, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import { configFromEnv } from "../dist/config.js";
 import { FileStorage } from "../dist/storage.js";
@@ -30,8 +30,8 @@ test("file storage uses absolute keys as-is", async () => {
 
 test("config reads env and http flags", () => {
   const config = configFromEnv({ HINGE_SESSION_FILE: "/tmp/x/session.json", HINGE_MCP_READ_ONLY: "true", HINGE_MCP_TOKEN: " tok " }, ["--http", "4444"]);
-  assert.equal(config.sessionFile, "/tmp/x/session.json");
-  assert.equal(config.cacheDir, "/tmp/x");
+  assert.equal(config.sessionFile, resolve("/tmp/x/session.json"));
+  assert.equal(config.cacheDir, resolve("/tmp/x"));
   assert.equal(config.readOnly, true);
   assert.equal(config.allowRaw, false);
   assert.equal(config.http, true);
