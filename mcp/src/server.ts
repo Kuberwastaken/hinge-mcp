@@ -1,12 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { HingeMcpContext } from "./client.js";
+import { registerAuthTools } from "./tools/auth.js";
 
 export const SERVER_NAME = "hinge-mcp";
 export const SERVER_VERSION = "0.1.0";
 
 export type ToolModule = (server: McpServer, context: HingeMcpContext) => void;
 
-const modules: ToolModule[] = [];
+const modules: ToolModule[] = [registerAuthTools];
 
 export function createHingeMcpServer(context: HingeMcpContext): McpServer {
   const server = new McpServer(
