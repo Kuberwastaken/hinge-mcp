@@ -40,14 +40,31 @@ wss.on("connection", (browserSocket, req) => {
     }
 
     const sendbirdSocket = new WebSocket(input.url, { headers: input.headers });
+    const pending = [];
+    sendbirdSocket.on("open", () => {
+      for (const frame of pending.splice(0)) sendbirdSocket.send(frame);
+    });
     sendbirdSocket.on("message", (frame) => browserSocket.send(frame.toString()));
     browserSocket.on("message", (frame) => {
-      if (sendbirdSocket.readyState === WebSocket.OPEN) sendbirdSocket.send(frame.toString());
+      const text = frame.toString();
+      if (sendbirdSocket.readyState === WebSocket.OPEN) sendbirdSocket.send(text);
+      else if (sendbirdSocket.readyState === WebSocket.CONNECTING) pending.push(text);
     });
-    sendbirdSocket.on("close", (code, reason) => browserSocket.close(code, reason.toString()));
+    sendbirdSocket.on("error", (error) => {
+      console.error("sendbird upstream error", error.message);
+      closeBrowserSocket(browserSocket, 1011, "upstream error");
+    });
+    sendbirdSocket.on("close", (code, reason) => closeBrowserSocket(browserSocket, code, reason.toString()));
+    browserSocket.on("error", () => sendbirdSocket.terminate());
     browserSocket.on("close", () => sendbirdSocket.close());
   });
 });
+
+function closeBrowserSocket(socket, code, reason) {
+  if (socket.readyState !== WebSocket.OPEN) return;
+  const allowed = code >= 1000 && code <= 4999 && code !== 1004 && code !== 1005 && code !== 1006;
+  socket.close(allowed ? code : 1011, reason.slice(0, 120));
+}
 
 console.log("hinge proxy listening");
 
