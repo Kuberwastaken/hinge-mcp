@@ -14,7 +14,7 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true
+    "exactOptionalPropertyTypes": false
   },
   "include": ["src/**/*.ts"]
 }

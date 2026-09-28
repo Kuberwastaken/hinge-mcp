@@ -3,13 +3,14 @@ import type { HingeMcpContext } from "./client.js";
 import { registerAuthTools } from "./tools/auth.js";
 import { registerReadTools } from "./tools/read.js";
 import { registerWriteTools } from "./tools/write.js";
+import { registerChatGptTools } from "./tools/chatgpt.js";
 
 export const SERVER_NAME = "hinge-mcp";
 export const SERVER_VERSION = "0.1.0";
 
 export type ToolModule = (server: McpServer, context: HingeMcpContext) => void;
 
-const modules: ToolModule[] = [registerAuthTools, registerReadTools, registerWriteTools];
+const modules: ToolModule[] = [registerAuthTools, registerReadTools, registerWriteTools, registerChatGptTools];
 
 export function createHingeMcpServer(context: HingeMcpContext): McpServer {
   const server = new McpServer(
