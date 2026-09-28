@@ -5,11 +5,27 @@ import {
 } from "hinge-ts";
 import { basename } from "node:path";
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 import type { HingeMcpConfig } from "./config.js";
 import { FileStorage } from "./storage.js";
 import { NodeHingeTransport, operationSignal } from "./transport.js";
 
 export const UNSET_PHONE_NUMBER = "unset";
+const tokenSchema = z
+  .object({ token: z.string().min(1), expires: z.string() })
+  .passthrough();
+const sessionSchema = z
+  .object({
+    phoneNumber: z.string().optional(),
+    deviceId: z.string().optional(),
+    installId: z.string().optional(),
+    sessionId: z.string().optional(),
+    installed: z.boolean().optional(),
+    hingeAuth: tokenSchema.extend({ identityId: z.string().min(1) }).optional(),
+    sendbirdAuth: tokenSchema.optional(),
+    sendbirdSessionKey: z.string().optional(),
+  })
+  .passthrough();
 export type HingeMcpContext = {
   client: HingeClient;
   config: HingeMcpConfig;
@@ -70,7 +86,15 @@ export function createHingeContext(
     sessionKey: basename(config.sessionFile),
     saveSession: () => client.persistence.saveSession(config.sessionFile),
     loadSession: async () => {
-      await client.persistence.loadSession(config.sessionFile);
+      try {
+        const data = await storage.readText(config.sessionFile);
+        if (data !== undefined) sessionSchema.parse(JSON.parse(data));
+        await client.persistence.loadSession(config.sessionFile);
+      } catch {
+        throw new Error(
+          "Session file is unreadable or invalid. Fix its permissions or move it aside and log in again; contents were not logged.",
+        );
+      }
       if (
         config.phoneNumber &&
         client.phoneNumber !== UNSET_PHONE_NUMBER &&

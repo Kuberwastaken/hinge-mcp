@@ -35,5 +35,12 @@ export function createHingeMcpServer(context: HingeMcpContext): McpServer {
     register(server, context);
   }
   registerSurfaces(server, context);
+  // Registration defaults to listChanged=true in the SDK. Our catalog is static
+  // for this process, so do not advertise notification streams we don't serve.
+  server.server.registerCapabilities({
+    tools: { listChanged: false },
+    resources: { listChanged: false, subscribe: false },
+    prompts: { listChanged: false },
+  });
   return server;
 }

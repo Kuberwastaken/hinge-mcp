@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { request } from "node:http";
+import { writeFile } from "node:fs/promises";
 import { generateKeyPair, exportJWK, createLocalJWKSet, SignJWT } from "jose";
 import { createOAuthVerifier } from "../dist/oauth.js";
 import { startHttpServer, createHttpHandler } from "../dist/http.js";
@@ -363,4 +364,39 @@ test("invalid configuration fails with actionable errors", () => {
     assert.throws(() => configFromEnv(env, []));
   assert.throws(() => configFromEnv({}, ["--unknown"]), /Unknown argument/);
   assert.throws(() => configFromEnv({}, ["--http", "oops"]), /integer/);
+});
+
+test("static catalog advertises only implemented capabilities", async (t) => {
+  const { context } = await makeContext();
+  const session = await connect(context);
+  t.after(() => session.close());
+  const capabilities = session.client.getServerCapabilities();
+  assert.equal(capabilities.tools.listChanged, false);
+  assert.equal(capabilities.resources.subscribe, false);
+  assert.equal(capabilities.resources.listChanged, false);
+  assert.equal(capabilities.prompts.listChanged, false);
+  assert.ok(capabilities.completions);
+  assert.deepEqual(await session.toolNames(), await session.toolNames());
+});
+
+test("session load rejects corrupt files without echoing contents and preserves valid state", async () => {
+  const { context } = await makeContext();
+  await context.saveSession();
+  const loaded = (await import("../dist/client.js")).createHingeContext(
+    context.config,
+  );
+  await loaded.loadSession();
+  assert.equal(loaded.client.hingeAuth.token, "hinge-token");
+  for (const content of [
+    "private-secret-not-json",
+    '{"hingeAuth":{"token":123}}',
+  ]) {
+    await writeFile(context.config.sessionFile, content);
+    await assert.rejects(
+      loaded.loadSession(),
+      (error) =>
+        /unreadable or invalid/.test(error.message) &&
+        !/private-secret/.test(error.message),
+    );
+  }
 });
