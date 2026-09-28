@@ -28,6 +28,7 @@ function usage(): string {
 Usage:
   hinge-mcp                 stdio transport (Claude Desktop, Claude Code)
   hinge-mcp --http [port]   Streamable HTTP on http://HOST:PORT/mcp (ChatGPT via a tunnel)
+                            with HINGE_MCP_TOKEN set, /mcp/<token> also works
 
 Environment:
   HINGE_PHONE_NUMBER    E.164 phone number for login (or pass it to hinge_login_start)

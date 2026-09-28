@@ -21,12 +21,18 @@ export function createHttpHandler(context: HingeMcpContext): (req: IncomingMessa
       res.end(JSON.stringify({ ok: true, name: "hinge-mcp", mcp: MCP_PATH }));
       return;
     }
-    if (url.pathname !== MCP_PATH) {
+    const pathToken = url.pathname.startsWith(`${MCP_PATH}/`) ? decodeURIComponent(url.pathname.slice(MCP_PATH.length + 1)) : undefined;
+    if (url.pathname !== MCP_PATH && pathToken === undefined) {
       res.writeHead(404, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "not found" }));
       return;
     }
-    if (token && !isAuthorized(req, token)) {
+    if (!token && pathToken !== undefined) {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "not found" }));
+      return;
+    }
+    if (token && !isAuthorized(req, token, pathToken)) {
       res.writeHead(401, { "content-type": "application/json", "www-authenticate": "Bearer" });
       res.end(JSON.stringify({ error: "unauthorized" }));
       return;
@@ -73,13 +79,20 @@ export async function startHttpServer(context: HingeMcpContext): Promise<{ close
   };
 }
 
-function isAuthorized(req: IncomingMessage, token: string): boolean {
+/**
+ * Accepts the token either as `Authorization: Bearer <token>` or as the last
+ * path segment (`/mcp/<token>`) for clients such as ChatGPT connectors that
+ * cannot send custom headers without OAuth.
+ */
+function isAuthorized(req: IncomingMessage, token: string, pathToken: string | undefined): boolean {
   const header = req.headers.authorization ?? "";
   const match = /^Bearer\s+(.+)$/i.exec(header);
-  if (!match?.[1]) return false;
-  const provided = Buffer.from(match[1].trim());
+  const candidates = [match?.[1]?.trim(), pathToken].filter((value): value is string => Boolean(value));
   const expected = Buffer.from(token);
-  return provided.length === expected.length && timingSafeEqual(provided, expected);
+  return candidates.some((candidate) => {
+    const provided = Buffer.from(candidate);
+    return provided.length === expected.length && timingSafeEqual(provided, expected);
+  });
 }
 
 function isLoopback(host: string): boolean {
