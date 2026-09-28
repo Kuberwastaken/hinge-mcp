@@ -3,14 +3,24 @@
   "private": true,
   "version": "0.2.0",
   "type": "module",
-  "workspaces": ["sdk", "mcp"],
+  "workspaces": [
+    "sdk",
+    "mcp"
+  ],
   "scripts": {
     "build": "npm run build -w sdk && npm run build -w mcp",
     "typecheck": "npm run build -w sdk && npm run typecheck --workspaces",
     "test": "npm run build && node --test sdk/test/*.test.mjs mcp/test/*.test.mjs",
     "start": "node mcp/dist/cli.js",
     "start:http": "node mcp/dist/cli.js --http",
-    "pack:dry": "npm pack --workspace mcp --dry-run"
+    "pack:dry": "npm pack --workspace mcp --dry-run",
+    "test:package": "npm run build && node scripts/check-package.mjs",
+    "smoke:live": "npm run build && node scripts/smoke-live.mjs"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.9"
+  }
 }

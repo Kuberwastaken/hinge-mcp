@@ -26,3 +26,4 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run pack:dry
+      - run: npm run test:package

@@ -1,4 +1,8 @@
-export { createHingeContext, stderrLogger, UNSET_PHONE_NUMBER } from "./client.js";
+export {
+  createHingeContext,
+  stderrLogger,
+  UNSET_PHONE_NUMBER,
+} from "./client.js";
 export type { HingeMcpContext } from "./client.js";
 export { configFromEnv, DEFAULT_DATA_DIR } from "./config.js";
 export type { HingeMcpConfig } from "./config.js";

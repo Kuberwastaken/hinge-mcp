@@ -23,30 +23,68 @@ export class MockTransport {
   async request(input) {
     this.requests.push(input);
     for (const route of this.routes) {
-      const matches = typeof route.match === "string" ? input.pathOrUrl === route.match || input.pathOrUrl.startsWith(`${route.match}?`) : route.match.test(input.pathOrUrl);
+      const matches =
+        typeof route.match === "string"
+          ? input.pathOrUrl === route.match ||
+            input.pathOrUrl.startsWith(`${route.match}?`)
+          : route.match.test(input.pathOrUrl);
       if (route.method === input.method && matches) {
         const result = await route.handler(input);
         if (result instanceof Error) throw result;
-        return { status: result.status ?? 200, headers: {}, body: result.body ?? {} };
+        return {
+          status: result.status ?? 200,
+          headers: {},
+          body: result.body ?? {},
+        };
       }
     }
-    return { status: 404, headers: {}, body: { message: `no mock for ${input.method} ${input.pathOrUrl}` } };
+    return {
+      status: 404,
+      headers: {},
+      body: { message: `no mock for ${input.method} ${input.pathOrUrl}` },
+    };
   }
 
   calls(method, prefix) {
-    return this.requests.filter((request) => request.method === method && request.pathOrUrl.startsWith(prefix));
+    return this.requests.filter(
+      (request) =>
+        request.method === method && request.pathOrUrl.startsWith(prefix),
+    );
   }
 }
 
-export async function makeContext({ env = {}, transport = new MockTransport(), loggedIn = true } = {}) {
+export async function makeContext({
+  env = {},
+  transport = new MockTransport(),
+  loggedIn = true,
+} = {}) {
   const dir = await mkdtemp(join(tmpdir(), "hinge-mcp-test-"));
-  const config = configFromEnv({ HINGE_SESSION_FILE: join(dir, "session.json"), HINGE_PHONE_NUMBER: "+15555550123", ...env }, []);
+  const config = configFromEnv(
+    {
+      HINGE_SESSION_FILE: join(dir, "session.json"),
+      HINGE_PHONE_NUMBER: "+15555550123",
+      ...env,
+    },
+    [],
+  );
   const context = createHingeContext(config);
   context.client.transport = transport;
-  context.client.setRecsFetchConfig({ multiFetchCount: 1, requestDelayMs: 0, rateLimitRetries: 0, rateLimitBackoffMs: 0 });
+  context.client.setRecsFetchConfig({
+    multiFetchCount: 1,
+    requestDelayMs: 0,
+    rateLimitRetries: 0,
+    rateLimitBackoffMs: 0,
+  });
   if (loggedIn) {
-    context.client.hingeAuth = { identityId: "1001", token: "hinge-token", expires: SESSION_VALID };
-    context.client.sendbirdAuth = { token: "sendbird-token", expires: SESSION_VALID };
+    context.client.hingeAuth = {
+      identityId: "1001",
+      token: "hinge-token",
+      expires: SESSION_VALID,
+    };
+    context.client.sendbirdAuth = {
+      token: "sendbird-token",
+      expires: SESSION_VALID,
+    };
   }
   return { context, transport, dir };
 }
@@ -77,14 +115,33 @@ export async function connect(context) {
     async close() {
       await client.close();
       await server.close();
-    }
+    },
   };
 }
 
 export function publicProfile(userId, extra = {}) {
-  return { user_id: userId, profile: { first_name: `User${userId}`, age: 30, location: { name: "Austin" }, ...extra } };
+  return {
+    user_id: userId,
+    profile: {
+      first_name: `User${userId}`,
+      age: 30,
+      location: { name: "Austin" },
+      ...extra,
+    },
+  };
 }
 
 export function publicContent(userId, answers = []) {
-  return { user_id: userId, content: { answers, photos: [{ url: `https://cdn.test/${userId}.jpg`, content_id: `photo-${userId}` }] } };
+  return {
+    user_id: userId,
+    content: {
+      answers,
+      photos: [
+        {
+          url: `https://cdn.test/${userId}.jpg`,
+          content_id: `photo-${userId}`,
+        },
+      ],
+    },
+  };
 }

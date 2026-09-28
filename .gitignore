@@ -6,3 +6,7 @@ dist/
 .env
 .env.*
 !.env.example
+session.json
+session.json.*
+.hinge-mcp/
+coverage/

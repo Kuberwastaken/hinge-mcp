@@ -30,7 +30,14 @@ test("file storage accepts absolute keys within its account directory", async ()
 });
 
 test("config reads env and http flags", () => {
-  const config = configFromEnv({ HINGE_SESSION_FILE: "/tmp/x/session.json", HINGE_MCP_READ_ONLY: "true", HINGE_MCP_TOKEN: " tok " }, ["--http", "4444"]);
+  const config = configFromEnv(
+    {
+      HINGE_SESSION_FILE: "/tmp/x/session.json",
+      HINGE_MCP_READ_ONLY: "true",
+      HINGE_MCP_TOKEN: " tok ",
+    },
+    ["--http", "4444"],
+  );
   assert.equal(config.sessionFile, resolve("/tmp/x/session.json"));
   assert.equal(config.cacheDir, resolve("/tmp/x"));
   assert.equal(config.readOnly, true);
