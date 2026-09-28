@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import type { RecommendationsResponse } from "hinge-ts";
 import { z } from "zod";
 import type { HingeMcpContext } from "../client.js";
@@ -15,11 +15,14 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "My Hinge profile",
       description: "Returns the logged-in user's own profile and profile content (photos, prompt answers).",
-      inputSchema: {},
+      inputSchema: z.object({}).strict(),
       annotations: READ_ONLY
     },
-    guarded(async () => {
-      const [me, content] = await Promise.all([client.profiles.me(), client.profiles.content().catch(() => undefined)]);
+    guarded(context, async () => {
+      const results = await Promise.allSettled([client.profiles.me(), client.profiles.content()]);
+      if (results[0].status === "rejected") throw results[0].reason;
+      if (results[1].status === "rejected") throw results[1].reason;
+      const me = results[0].value, content = results[1].value;
       return jsonResult({ userId: me.userId ?? client.hingeAuth?.identityId ?? null, profile: me.profile ?? null, content: content?.content ?? null });
     })
   );
@@ -29,13 +32,13 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Look up Hinge profiles",
       description: "Fetches public profiles for one or more Hinge user ids and returns compact summaries (name, age, location, prompts, photos) plus a readable text rendering.",
-      inputSchema: {
-        userIds: z.array(z.string().min(1)).min(1).max(75).describe("Hinge user ids (subjectId values from recommendations, likes, or matches)"),
+      inputSchema: z.object({
+        userIds: z.array(z.string().regex(/^[A-Za-z0-9_-]{1,200}$/)).min(1).max(75).describe("Hinge user ids (subjectId values from recommendations, likes, or matches)"),
         includeRaw: z.boolean().optional().describe("Include the raw profile object for each user")
-      },
+      }).strict(),
       annotations: READ_ONLY
     },
-    guarded(async ({ userIds, includeRaw }) => {
+    guarded(context, async ({ userIds, includeRaw }) => {
       const lookup = await loadProfileSummaries(client, userIds, { includeRaw: includeRaw ?? false });
       return jsonResult({ profiles: lookup.ordered, missing: userIds.filter((id) => !lookup.byId.has(id)) });
     })
@@ -46,10 +49,10 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Dating preferences",
       description: "Returns the user's current dating preferences (age range, distance, dealbreakers, and so on).",
-      inputSchema: {},
+      inputSchema: z.object({}).strict(),
       annotations: READ_ONLY
     },
-    guarded(async () => jsonResult(await client.profiles.preferences()))
+    guarded(context, async () => jsonResult(await client.profiles.preferences()))
   );
 
   server.registerTool(
@@ -57,15 +60,15 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Recommendations feed",
       description: "Fetches the current recommendation feeds (the profiles Hinge shows in Discover). Each subject has subjectId and ratingToken, which hinge_like and hinge_skip need. Profiles are summarized by default.",
-      inputSchema: {
+      inputSchema: z.object({
         newHere: z.boolean().optional().describe("Filter to people new on Hinge"),
         activeToday: z.boolean().optional().describe("Filter to people active today"),
         includeProfiles: z.boolean().optional().describe("Attach profile summaries (default true)"),
         limit: z.number().int().min(1).max(100).optional().describe("Maximum subjects to return (default 25)")
-      },
+      }).strict(),
       annotations: READ_ONLY
     },
-    guarded(async ({ newHere, activeToday, includeProfiles, limit }) => {
+    guarded(context, async ({ newHere, activeToday, includeProfiles, limit }) => {
       const recs: RecommendationsResponse = newHere !== undefined || activeToday !== undefined
         ? await client.recommendations.getWithParams({ newHere: newHere ?? false, activeToday: activeToday ?? false })
         : await client.recommendations.get();
@@ -90,10 +93,10 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Standouts",
       description: "Returns the Standouts feed (curated profiles that usually need a rose to like).",
-      inputSchema: {},
+      inputSchema: z.object({}).strict(),
       annotations: READ_ONLY
     },
-    guarded(async () => jsonResult(await client.connections.standouts()))
+    guarded(context, async () => jsonResult(await client.connections.standouts()))
   );
 
   server.registerTool(
@@ -101,10 +104,10 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Remaining likes",
       description: "Returns how many likes (and roses / superlikes) remain today.",
-      inputSchema: {},
+      inputSchema: z.object({}).strict(),
       annotations: READ_ONLY
     },
-    guarded(async () => jsonResult(await client.likes.limit()))
+    guarded(context, async () => jsonResult(await client.likes.limit()))
   );
 
   server.registerTool(
@@ -112,13 +115,13 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Likes received",
       description: "Lists people who liked the user. Each entry has subjectId and ratingToken so hinge_like (to match) or hinge_skip (to pass) can respond. Profiles are summarized by default.",
-      inputSchema: {
+      inputSchema: z.object({
         includeProfiles: z.boolean().optional().describe("Attach profile summaries (default true)"),
         limit: z.number().int().min(1).max(100).optional().describe("Maximum entries (default 25)")
-      },
+      }).strict(),
       annotations: READ_ONLY
     },
-    guarded(async ({ includeProfiles, limit }) => {
+    guarded(context, async ({ includeProfiles, limit }) => {
       const response = await client.likes.list();
       const likes = (response.likes ?? []).slice(0, limit ?? 25).map((like) => ({
         subjectId: like.subjectId ?? like.rating?.subjectId ?? null,
@@ -140,13 +143,13 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Matches",
       description: "Lists current connections (matches). Returns each match's subjectId, who initiated, and a profile summary.",
-      inputSchema: {
+      inputSchema: z.object({
         includeProfiles: z.boolean().optional().describe("Attach profile summaries (default true)"),
         limit: z.number().int().min(1).max(200).optional().describe("Maximum matches (default 50)")
-      },
+      }).strict(),
       annotations: READ_ONLY
     },
-    guarded(async ({ includeProfiles, limit }) => {
+    guarded(context, async ({ includeProfiles, limit }) => {
       const response = await client.connections.list();
       const selfId = client.hingeAuth?.identityId;
       const connections = response.connections.slice(0, limit ?? 50).map((connection) => ({
@@ -167,15 +170,15 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Match detail",
       description: "Returns connection details and the match note (if any) for one match, plus the profile summary.",
-      inputSchema: {
-        subjectId: z.string().min(1).describe("The match's user id")
-      },
+      inputSchema: z.object({
+        subjectId: z.string().regex(/^[A-Za-z0-9_-]{1,500}$/).describe("The match's user id")
+      }).strict(),
       annotations: READ_ONLY
     },
-    guarded(async ({ subjectId }) => {
+    guarded(context, async ({ subjectId }) => {
       const [detail, matchNote, lookup] = await Promise.all([
         client.connections.detail(subjectId),
-        client.connections.matchNote(subjectId).catch(() => null),
+        client.connections.matchNote(subjectId),
         loadProfileSummaries(client, [subjectId])
       ]);
       return jsonResult({ subjectId, detail, matchNote, profile: lookup.byId.get(subjectId) ?? null });
@@ -187,12 +190,12 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Chat channels",
       description: "Lists chat channels (conversations with matches) with the partner, unread count, and last message. Use channelUrl with hinge_chat_messages.",
-      inputSchema: {
+      inputSchema: z.object({
         limit: z.number().int().min(1).max(200).optional().describe("Maximum channels (default 30)")
-      },
+      }).strict(),
       annotations: READ_ONLY
     },
-    guarded(async ({ limit }) => {
+    guarded(context, async ({ limit }) => {
       await client.ensureSendbirdAuth();
       const response = await client.chat.channels(limit ?? 30);
       const selfId = client.hingeAuth?.identityId;
@@ -205,23 +208,24 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Chat messages",
       description: "Returns messages from one chat channel, oldest first. Either pass channelUrl from hinge_chats or partnerUserId to resolve the channel for a match.",
-      inputSchema: {
-        channelUrl: z.string().min(1).optional().describe("Sendbird channel url from hinge_chats"),
-        partnerUserId: z.string().min(1).optional().describe("Match user id; used when channelUrl is not known"),
+      inputSchema: z.object({
+        channelUrl: z.string().regex(/^[A-Za-z0-9_-]{1,500}$/).optional().describe("Sendbird channel url from hinge_chats"),
+        partnerUserId: z.string().regex(/^[A-Za-z0-9_-]{1,500}$/).optional().describe("Match user id; used when channelUrl is not known"),
         limit: z.number().int().min(1).max(200).optional().describe("Maximum messages (default 50)"),
-        beforeTimestamp: z.number().int().optional().describe("Only messages created before this unix millisecond timestamp")
-      },
+        beforeTimestamp: z.number().int().min(0).max(8640000000000000).optional().describe("Only messages created before this unix millisecond timestamp")
+      }).strict(),
       annotations: READ_ONLY
     },
-    guarded(async ({ channelUrl, partnerUserId, limit, beforeTimestamp }) => {
+    guarded(context, async ({ channelUrl, partnerUserId, limit, beforeTimestamp }) => {
+      if (Boolean(channelUrl) === Boolean(partnerUserId)) throw new Error("Pass exactly one of channelUrl or partnerUserId");
       await client.ensureSendbirdAuth();
-      const url = channelUrl ?? (partnerUserId ? (await client.chat.ensureDmWith(partnerUserId)).channelUrl : undefined);
+      const url = channelUrl ?? (partnerUserId ? (await client.chat.findDmWith(partnerUserId))?.channelUrl : undefined);
       if (!url) {
-        throw new Error("Pass channelUrl or partnerUserId");
+        throw new Error("No existing channel found. Pass channelUrl or an existing conversation partnerUserId");
       }
       const response = await client.chat.messages({ channelUrl: url, messageTs: String(beforeTimestamp ?? Date.now()), prevLimit: limit ?? 50 });
       const selfId = client.hingeAuth?.identityId;
-      const messages = response.messages.map((message) => summarizeMessage(message, selfId)).reverse();
+      const messages = response.messages.map((message) => summarizeMessage(message, selfId)).sort((a, b) => String(a.createdAt ?? "").localeCompare(String(b.createdAt ?? "")));
       return jsonResult({ channelUrl: url, count: messages.length, messages });
     })
   );
@@ -231,14 +235,14 @@ export function registerReadTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Search Hinge prompts",
       description: "Searches the catalog of Hinge profile prompts by text, or lists prompts in a category. Useful for suggesting prompt answers.",
-      inputSchema: {
-        query: z.string().optional().describe("Text to search prompt questions for"),
-        category: z.string().optional().describe("Category slug to list"),
+      inputSchema: z.object({
+        query: z.string().max(1000).optional().describe("Text to search prompt questions for"),
+        category: z.string().max(1000).optional().describe("Category slug to list"),
         limit: z.number().int().min(1).max(200).optional().describe("Maximum prompts (default 30)")
-      },
+      }).strict(),
       annotations: READ_ONLY
     },
-    guarded(async ({ query, category, limit }) => {
+    guarded(context, async ({ query, category, limit }) => {
       const manager = await client.prompts.manager();
       let prompts = query ? manager.searchPrompts(query) : category ? manager.getPromptsByCategory(category) : manager.getSelectablePrompts();
       prompts = prompts.slice(0, limit ?? 30);

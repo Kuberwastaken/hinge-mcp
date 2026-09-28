@@ -20,12 +20,13 @@ test("file storage round trips and creates directories", async () => {
   assert.equal(await storage.exists("nested/session.json"), false);
 });
 
-test("file storage uses absolute keys as-is", async () => {
+test("file storage accepts absolute keys within its account directory", async () => {
   const dir = await mkdtemp(join(tmpdir(), "hinge-mcp-storage-"));
-  const storage = new FileStorage("/nonexistent-base");
+  const storage = new FileStorage(dir);
   const path = join(dir, "abs.json");
   await storage.writeText(path, "x");
   assert.equal(await storage.readText(path), "x");
+  await assert.rejects(storage.writeText("../escape.json", "x"), /escapes/);
 });
 
 test("config reads env and http flags", () => {

@@ -34,11 +34,12 @@ export async function loadProfileSummaries(client: HingeClient, userIds: string[
   if (ids.length === 0) {
     return { byId, ordered: [] };
   }
-  const manager = await client.prompts.manager().catch(() => undefined);
   const [profiles, contents] = await Promise.all([
     client.profiles.public(ids),
-    client.profiles.publicContent(ids).catch(() => [] as ProfileContentFull[])
+    client.profiles.publicContent(ids)
   ]);
+  const needsPrompts = contents.some(c => c.content.answers?.some(a => !a.question && a.promptId));
+  const manager = needsPrompts ? await client.prompts.manager() : undefined;
   const contentById = new Map<string, ProfileContentFull>();
   for (const content of contents) {
     if (content.userId) contentById.set(content.userId, content);
@@ -129,9 +130,9 @@ export function summarizeMessage(message: SendbirdMessage, selfUserId: string | 
 
 export function toIso(value: string | number | undefined): string | null {
   if (value === undefined || value === null) return null;
-  const number = typeof value === "number" ? value : Number.parseInt(value, 10);
+  const number = typeof value === "number" ? value : /^\d+$/.test(value) ? Number(value) : NaN;
   const ms = Number.isFinite(number) ? number : Date.parse(String(value));
-  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+  return Number.isFinite(ms) && Math.abs(ms) <= 8640000000000000 ? new Date(ms).toISOString() : null;
 }
 
 function describeValue(value: unknown): string | undefined {

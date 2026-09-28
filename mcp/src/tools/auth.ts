@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { Email2FAError } from "hinge-ts";
 import { z } from "zod";
 import type { HingeMcpContext } from "../client.js";
@@ -13,21 +13,13 @@ export function registerAuthTools(server: McpServer, context: HingeMcpContext): 
     "hinge_session_status",
     {
       title: "Hinge session status",
-      description: "Reports whether a Hinge session is loaded and still valid, which phone number it belongs to, and where it is stored. Call this first when unsure whether login is needed.",
-      inputSchema: {},
-      annotations: { readOnlyHint: true, openWorldHint: true }
+      description: "Reports local token presence and expiry; does not verify with Hinge, which phone number it belongs to, and where it is stored. Call this first when unsure whether login is needed.",
+      inputSchema: z.object({}).strict(),
+      annotations: { readOnlyHint: true, openWorldHint: false }
     },
-    guarded(async () => {
+    guarded(context, async () => {
       const hasToken = Boolean(client.hingeAuth?.token);
-      let valid = false;
-      let error: string | undefined;
-      if (hasToken) {
-        try {
-          valid = await client.auth.isSessionValid();
-        } catch (cause) {
-          error = cause instanceof Error ? cause.message : String(cause);
-        }
-      }
+      const valid = hasToken && Date.parse(client.hingeAuth?.expires ?? "") > Date.now();
       return jsonResult({
         loggedIn: valid,
         hasStoredToken: hasToken,
@@ -37,7 +29,7 @@ export function registerAuthTools(server: McpServer, context: HingeMcpContext): 
         sessionFile: context.config.sessionFile,
         readOnly: context.config.readOnly,
         nextStep: valid ? "ready" : "call hinge_login_start, then hinge_login_verify_otp",
-        ...(error ? { error } : {})
+        validation: "local_expiry_only"
       });
     })
   );
@@ -47,12 +39,13 @@ export function registerAuthTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Start Hinge login",
       description: "Sends a Hinge SMS one-time code to the phone number. Uses HINGE_PHONE_NUMBER unless phoneNumber is given (E.164, e.g. +15555550123). Follow up with hinge_login_verify_otp.",
-      inputSchema: {
+      inputSchema: z.object({
         phoneNumber: z.string().regex(PHONE_PATTERN, "use E.164 format like +15555550123").optional().describe("Phone number in E.164 format. Optional when HINGE_PHONE_NUMBER is set.")
-      },
+      }).strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
     },
-    guarded(async ({ phoneNumber }) => {
+    guarded(context, async ({ phoneNumber }) => {
+      if (client.hingeAuth && phoneNumber && phoneNumber !== client.phoneNumber) throw new Error("Log out before switching accounts");
       if (phoneNumber) {
         client.phoneNumber = phoneNumber;
       }
@@ -74,12 +67,12 @@ export function registerAuthTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Verify Hinge SMS code",
       description: "Submits the SMS one-time code from hinge_login_start. On success the session is saved. If Hinge requires email verification, the result contains a caseId and the email address; ask the user for the emailed code and call hinge_login_verify_email.",
-      inputSchema: {
-        otp: z.string().min(4).max(10).describe("The numeric code from the SMS")
-      },
+      inputSchema: z.object({
+        otp: z.string().regex(/^\d{4,10}$/).describe("The numeric code from the SMS")
+      }).strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
     },
-    guarded(async ({ otp }) => {
+    guarded(context, async ({ otp }) => {
       try {
         await client.auth.submitOtp(otp.trim());
       } catch (error) {
@@ -105,13 +98,13 @@ export function registerAuthTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Verify Hinge email code",
       description: "Completes login when hinge_login_verify_otp reported email_verification_required. Needs the caseId from that result and the code Hinge emailed to the user.",
-      inputSchema: {
-        caseId: z.string().min(1).describe("caseId returned by hinge_login_verify_otp"),
-        code: z.string().min(4).max(10).describe("The code from the verification email")
-      },
+      inputSchema: z.object({
+        caseId: z.string().trim().min(1).max(500).describe("caseId returned by hinge_login_verify_otp"),
+        code: z.string().regex(/^\d{4,10}$/).describe("The code from the verification email")
+      }).strict(),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true }
     },
-    guarded(async ({ caseId, code }) => {
+    guarded(context, async ({ caseId, code }) => {
       await client.auth.submitEmailCode(caseId.trim(), code.trim());
       await context.saveSession();
       return jsonResult(loginSummary(context));
@@ -123,14 +116,11 @@ export function registerAuthTools(server: McpServer, context: HingeMcpContext): 
     {
       title: "Forget Hinge session",
       description: "Deletes the locally stored Hinge session file and clears in-memory tokens. Does not contact Hinge.",
-      inputSchema: {},
+      inputSchema: z.object({}).strict(),
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false }
     },
-    guarded(async () => {
-      delete client.hingeAuth;
-      delete client.sendbirdAuth;
-      delete client.sendbirdSessionKey;
-      await context.storage.remove(context.config.sessionFile);
+    guarded(context, async () => {
+      await context.clearSession();
       return jsonResult({ status: "logged_out", sessionFile: context.config.sessionFile });
     })
   );

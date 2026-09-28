@@ -1188,6 +1188,15 @@ export class ChatApi {
     return { channelUrl: await this.getOrCreateDmChannel(this.requireUserId(), partnerId) };
   }
 
+  /** Looks up an existing DM without creating a channel (safe for read tools). */
+  async findDmWith(partnerId: string): Promise<SendbirdChannelHandle | undefined> {
+    const self = encodeURIComponent(this.requireUserId());
+    const peer = encodeURIComponent(partnerId);
+    const response = await this.client.requestJson<SendbirdChannelsResponse>("sendbird", "GET", `/users/${self}/my_group_channels?members_exactly_in=${peer}&show_member=true&show_empty=true&limit=1`);
+    const channelUrl = response.channels[0]?.channelUrl;
+    return channelUrl ? { channelUrl } : undefined;
+  }
+
   async sendMessage(payload: SendMessagePayload): Promise<unknown> {
     const body = { ...payload, dedupId: payload.dedupId ?? randomUuid() };
     const selfUserId = this.requireUserId();

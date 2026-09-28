@@ -1,4 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { HingeMcpContext } from "../client.js";
 import { guarded, jsonResult } from "../result.js";
@@ -23,13 +23,13 @@ export function registerChatGptTools(server: McpServer, context: HingeMcpContext
     "search",
     {
       title: "Search Hinge",
-      description: "Searches the user's Hinge matches, received likes, and (when the query mentions recommendations or discover) the recommendation feed by name, location, or prompt text. Returns result ids for fetch. An empty query lists matches.",
-      inputSchema: {
-        query: z.string().describe("Free text: a name, city, prompt words, or 'recommendations' / 'likes' / 'matches' / 'chats' to pick a source")
-      },
+      description: "Searches the user's Hinge matches, received likes, and (when the query mentions recommendations or discover) the recommendation feed by name, location, or prompt text. Searches at most 200 profiles / 100 chats; returns at most 50 result ids for fetch. An empty query lists matches.",
+      inputSchema: z.object({
+        query: z.string().max(1000).describe("Free text: a name, city, prompt words, or 'recommendations' / 'likes' / 'matches' / 'chats' to pick a source")
+      }).strict(),
       annotations: READ_ONLY
     },
-    guarded(async ({ query }) => {
+    guarded(context, async ({ query }) => {
       const results = await search(context, query);
       return jsonResult({ results });
     })
@@ -39,16 +39,17 @@ export function registerChatGptTools(server: McpServer, context: HingeMcpContext
     "fetch",
     {
       title: "Fetch Hinge item",
-      description: "Fetches the full content for an id returned by search: a profile (match:, like:, rec:, profile:) or a chat transcript (chat:<channelUrl>).",
-      inputSchema: {
-        id: z.string().min(1).describe("Result id from search")
-      },
+      description: "Fetches profile content or the latest 100 chat messages for an id returned by search: a profile (match:, like:, rec:, profile:) or a chat transcript (chat:<channelUrl>).",
+      inputSchema: z.object({
+        id: z.string().trim().min(1).max(500).describe("Result id from search")
+      }).strict(),
       annotations: READ_ONLY
     },
-    guarded(async ({ id }) => {
+    guarded(context, async ({ id }) => {
       const separator = id.indexOf(":");
       const kind = separator > 0 ? id.slice(0, separator) : "profile";
       const key = separator > 0 ? id.slice(separator + 1) : id;
+      if (!["match", "like", "rec", "profile", "chat"].includes(kind) || !/^[A-Za-z0-9_-]{1,500}$/.test(key)) throw new Error("Invalid fetch id; use an id returned by search");
       if (kind === "chat") {
         return jsonResult(await fetchChat(context, key));
       }
@@ -77,20 +78,20 @@ async function search(context: HingeMcpContext, rawQuery: string): Promise<Searc
   const selfId = client.hingeAuth?.identityId;
 
   if (wantsMatches) {
-    const connections = await client.connections.list().catch(() => ({ connections: [] }));
+    const connections = await client.connections.list();
     for (const connection of connections.connections) {
       candidates.push({ id: `match:${connection.subjectId}`, userId: connection.subjectId, label: "match" });
     }
   }
   if (wantsLikes) {
-    const likes = await client.likes.list().catch(() => ({ likes: [] }));
+    const likes = await client.likes.list();
     for (const like of likes.likes ?? []) {
       const userId = like.subjectId ?? like.rating?.subjectId;
       if (userId) candidates.push({ id: `like:${userId}`, userId, label: "liked you" });
     }
   }
   if (wantsRecs) {
-    const recs = await client.recommendations.get().catch(() => ({ feeds: [] }));
+    const recs = await client.recommendations.get();
     for (const feed of recs.feeds) {
       for (const subject of feed.subjects) {
         candidates.push({ id: `rec:${subject.subjectId}`, userId: subject.subjectId, label: `recommendation (${feed.origin})` });
@@ -100,8 +101,8 @@ async function search(context: HingeMcpContext, rawQuery: string): Promise<Searc
 
   const results: SearchResult[] = [];
   if (candidates.length) {
-    const lookup = await loadProfileSummaries(client, candidates.map((candidate) => candidate.userId));
-    for (const candidate of candidates) {
+    const lookup = await loadProfileSummaries(client, candidates.slice(0, 200).map((candidate) => candidate.userId));
+    for (const candidate of candidates.slice(0, 200)) {
       const profile = lookup.byId.get(candidate.userId);
       const haystack = (profile?.text ?? candidate.userId).toLowerCase();
       if (terms.length && !terms.every((term) => haystack.includes(term))) continue;
@@ -112,7 +113,7 @@ async function search(context: HingeMcpContext, rawQuery: string): Promise<Searc
 
   if (wantsChats) {
     await client.ensureSendbirdAuth();
-    const channels = await client.chat.channels(100).catch(() => ({ channels: [] }));
+    const channels = await client.chat.channels(100);
     for (const channel of channels.channels) {
       const partner = channel.members.find((member) => member.userId !== selfId) ?? channel.members[0];
       const last = channel.lastMessage ? summarizeMessage(channel.lastMessage, selfId) : undefined;
@@ -129,8 +130,8 @@ async function fetchChat(context: HingeMcpContext, channelUrl: string): Promise<
   await client.ensureSendbirdAuth();
   const selfId = client.hingeAuth?.identityId;
   const [channel, messages] = await Promise.all([
-    client.chat.channel(channelUrl).catch(() => undefined),
-    client.chat.fullMessages(channelUrl)
+    client.chat.channel(channelUrl),
+    client.chat.messages({ channelUrl, messageTs: String(Date.now()), prevLimit: 100 }).then(r => r.messages.reverse())
   ]);
   const partner = channel?.members.find((member) => member.userId !== selfId) ?? channel?.members[0];
   const lines = messages.map((message) => {
@@ -141,7 +142,7 @@ async function fetchChat(context: HingeMcpContext, channelUrl: string): Promise<
     id: `chat:${channelUrl}`,
     title: `Chat with ${partner?.nickname ?? partner?.userId ?? "unknown"}`,
     text: lines.join("\n") || "(no messages yet)",
-    metadata: { channelUrl, partnerUserId: partner?.userId ?? null, messageCount: messages.length }
+    metadata: { channelUrl, partnerUserId: partner?.userId ?? null, messageCount: messages.length, window: "latest_100", possiblyMore: messages.length === 100 }
   };
 }
 

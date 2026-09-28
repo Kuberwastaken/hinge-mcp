@@ -57,22 +57,12 @@ test("http transport runs mcp sessions with a valid bearer token", async () => {
   }
 });
 
-test("http transport accepts the token as a path segment", async () => {
+test("HTTP rejects credentials in URL paths", async () => {
   const { http } = await startServer({ HINGE_MCP_TOKEN: "secret" });
-  const client = new Client({ name: "http-test", version: "0.0.0" });
   try {
-    const wrong = await fetch(`${http.url}/nope`, {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })
-    });
-    assert.equal(wrong.status, 401);
-    await client.connect(new StreamableHTTPClientTransport(new URL(`${http.url}/secret`)));
-    assert.ok((await client.listTools()).tools.length > 0);
-  } finally {
-    await client.close().catch(() => undefined);
-    await http.close();
-  }
+    for (const path of ["/secret", "/%", "/nope"]) assert.equal((await fetch(http.url + path)).status, 404);
+    assert.equal((await fetch(http.url + "?token=secret", {method: "POST"})).status, 401);
+  } finally { await http.close(); }
 });
 
 test("path tokens are not routable when no token is configured", async () => {
