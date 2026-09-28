@@ -46,7 +46,7 @@
     "pack:dry": "npm --cache .npm-cache pack --dry-run"
   },
   "devDependencies": {
-    "typescript": "^5.9.0"
+    "typescript": "^7.0.2"
   },
   "engines": {
     "node": ">=20"
