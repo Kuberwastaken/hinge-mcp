@@ -1,5 +1,7 @@
 # hinge-ts
 
+> Preserved upstream SDK documentation. For the maintained MCP server and build commands, see the [repository README](../README.md). Publishing instructions below describe upstream, not a configured release process for this fork.
+
 Typed browser SDK for Hinge automation, with Hinge REST, Sendbird chat, session
 persistence, redacted logging, and raw escape hatches.
 
@@ -172,7 +174,7 @@ See [docs/proxy.md](docs/proxy.md), [docs/deploy.md](docs/deploy.md), and
 `mcp/` ships `hinge-mcp`, an MCP server that lets Claude Desktop, Claude Code,
 and ChatGPT operate a Hinge account through this SDK. It runs on your machine
 over stdio or Streamable HTTP and keeps the session in a local file. See
-[mcp/README.md](mcp/README.md).
+[mcp/README.md](../README.md).
 
 ```bash
 cd mcp && npm install && npm run build

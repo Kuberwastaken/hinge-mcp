@@ -25,3 +25,4 @@ for (const name of await readdir("dist")) {
   }
 }
 await copyFile("../LICENSE-MIT", "LICENSE-MIT");
+await copyFile("../README.md", "README.md");
