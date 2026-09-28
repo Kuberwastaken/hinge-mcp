@@ -167,8 +167,21 @@ the realtime socket.
 See [docs/proxy.md](docs/proxy.md), [docs/deploy.md](docs/deploy.md), and
 [examples](examples).
 
+## MCP Server
+
+`mcp/` ships `hinge-mcp`, an MCP server that lets Claude Desktop, Claude Code,
+and ChatGPT operate a Hinge account through this SDK. It runs on your machine
+over stdio or Streamable HTTP and keeps the session in a local file. See
+[mcp/README.md](mcp/README.md).
+
+```bash
+cd mcp && npm install && npm run build
+HINGE_PHONE_NUMBER=+15555550123 node dist/cli.js
+```
+
 ## Docs
 
+- [MCP server](docs/mcp.md)
 - [Auth](docs/auth.md)
 - [Proxy](docs/proxy.md)
 - [Deployment](docs/deploy.md)
