@@ -20,7 +20,8 @@ export function defaultSettings(overrides: Partial<HingeSettings> = {}): HingeSe
     sendbirdApiUrl: `https://api-${lowerAppId}.sendbird.com`,
     sendbirdWsUrl: `wss://ws-${lowerAppId}.sendbird.com`,
     sendbirdSdkVersion: "4.26.0",
-    hingeAppVersion: "9.91.0",
+    // Local patch 2026-10-20: Hinge retired 9.91.0 (every call answered 426); 10.9.0 = App Store, 2026-10-19.
+    hingeAppVersion: "10.9.0",
     hingeBuildNumber: "11639",
     osVersion: "26.0",
     ...overrides

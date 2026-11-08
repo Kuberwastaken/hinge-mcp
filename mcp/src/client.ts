@@ -43,8 +43,11 @@ export function createHingeContext(
   logger?: HingeLogger,
 ): HingeMcpContext {
   const storage = new FileStorage(config.cacheDir);
+  const appVersion = process.env.HINGE_APP_VERSION?.trim();
   const client = HingeClient.builder()
     .phoneNumber(config.phoneNumber ?? UNSET_PHONE_NUMBER)
+    // Local patch 2026-10-20: lets a retired app version be bumped without a rebuild.
+    .settings(appVersion ? { hingeAppVersion: appVersion } : {})
     .storage(storage)
     .recsFetchConfig({
       multiFetchCount: 1,
